@@ -25,19 +25,22 @@ func square(x float64) float64 {
 func opt_func(v optimization.Point) float64 {
 	cf += 1
 	x, y := v.Dense[0], v.Dense[1]
+	fmt.Printf("cal func(%f, %f)\n", x, y)
 	return ipow(x-1.5, 4) + ipow(y-2.5, 4)
 }
 
 func opt_grad(v optimization.Point) optimization.Point {
 	cg += 1
 	x, y := v.Dense[0], v.Dense[1]
+	fmt.Printf("cal grad(%f, %f)\n", x, y)
 	gx, gy := 4*ipow(x-1.5, 3), 4*ipow(y-2.5, 3)
 	return optimization.DensePoint([]float64{gx, gy})
 }
 
 func test_solver(name string, solver optimization.Solver) {
+	fmt.Printf("solver %s ...\n", name)
 	cf, cg = 0, 0
-	solver.Init()
+	solver.Init(map[string]interface{}{"MaxIter": 30})
 	p := optimization.DensePoint([]float64{2.0, 2.0})
 	problem := &optimization.Problem{
 		ValueFunc:    opt_func,

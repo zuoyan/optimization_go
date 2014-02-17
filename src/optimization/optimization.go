@@ -2,30 +2,21 @@
 package optimization
 
 import (
+	"container/list"
+	"fmt"
 	"math"
 )
 
 const (
-	dbl_max       = math.MaxFloat64
-	dbl_epsilon   = 2.22044604925031308085e-16
-	BreakRollback = -2
-	BreakKeep     = -1
-	BreakMax      = 0
-	Rollback      = 1
-	Forward       = 2
+	dbl_max          = math.MaxFloat64
+	dbl_epsilon      = 2.22044604925031308085e-16
+	BreakRollback    = -2
+	BreakKeep        = -1
+	BreakMax         = 0
+	Rollback         = 1
+	Forward          = 2
+	point_cache_size = 4
 )
-
-// TODO: COW(copy on write)? anytime I need to write, I just copy. But we can do
-// better to avoid the copy if we know the reference count is one?
-// TODO: Sparse
-type Point struct {
-	Factor float64
-	Dense  []float64
-}
-
-func DensePoint(a []float64) Point {
-	return Point{Factor: 1.0, Dense: a}
-}
 
 func abs(x float64) float64 {
 	if x < 0 {
@@ -62,11 +53,53 @@ func imax(x int, y int) int {
 	return y
 }
 
+// TODO: COW(copy on write)? anytime I need to write, I just copy. But we can do
+// better to avoid the copy if we know the reference count is one?
+// TODO: Sparse
+type Point struct {
+	Factor float64
+	Dense  []float64
+}
+
+func DensePoint(a []float64) Point {
+	return Point{Factor: 1.0, Dense: a}
+}
+
 func (a *Point) Size() int {
 	if a.Dense != nil {
 		return len(a.Dense)
 	}
 	return 0
+}
+
+func (a *Point) Equal(b Point) bool {
+	s := a.Size()
+	if s != b.Size() {
+		return false
+	}
+	for i := 0; i < s; i++ {
+		av := a.Factor * a.Dense[i]
+		bv := b.Factor * b.Dense[i]
+		if av != bv {
+			return false
+		}
+	}
+	return true
+}
+
+func (a *Point) String() string {
+	s := a.Size()
+	if s == 0 {
+		return "[]"
+	}
+	ret := "["
+	for x, v := range a.Dense {
+		if x > 0 {
+			ret += ", "
+		}
+		ret += fmt.Sprintf("%v", v)
+	}
+	return ret + "]"
 }
 
 func (a *Point) Scale(x float64) Point {
@@ -156,10 +189,16 @@ func (a *Point) InnerProd(b Point) float64 {
 	return s * a.Factor * b.Factor
 }
 
-type LineValueGradient struct {
+type ProblemLineCache struct {
 	point    float64
-	value    float64
-	gradient float64
+	value    *float64
+	gradient *float64
+}
+
+type ProblemPointCache struct {
+	point    Point
+	value    *float64
+	gradient *Point
 }
 
 type Problem struct {
@@ -174,22 +213,100 @@ type Problem struct {
 	LineUpdateFunc       func(Point, Point)
 	LineValueFunc        func(float64) float64
 	LineGradientFunc     func(float64) float64
+	line_cache           map[float64]*ProblemLineCache
+	point_cache          list.List
 }
 
 func (problem *Problem) Value(p Point) float64 {
-	if problem.ValueFunc != nil {
-		return problem.ValueFunc(p)
+	c := (*ProblemPointCache)(nil)
+	e := (*list.Element)(nil)
+	for e = problem.point_cache.Front(); e != nil; e = e.Next() {
+		c = e.Value.(*ProblemPointCache)
+		if c.point.Equal(p) {
+			if c.value != nil {
+				problem.point_cache.MoveToFront(e)
+				return *c.value
+			}
+			break
+		} else {
+			c = nil
+		}
 	}
-	v, _ := problem.ValueAndGradientFunc(p)
-	return v
+	f := 0.0
+	g := (*Point)(nil)
+	if problem.ValueFunc != nil {
+		f = problem.ValueFunc(p)
+	} else {
+		fv, gv := problem.ValueAndGradientFunc(p)
+		g = &gv
+		f = fv
+	}
+	if point_cache_size > 0 {
+		if c != nil {
+			c.value = &f
+			if g != nil {
+				c.gradient = g
+			}
+			problem.point_cache.MoveToFront(e)
+		} else {
+			problem.point_cache.PushFront(
+				&ProblemPointCache{
+					point:    p,
+					value:    &f,
+					gradient: g})
+			if problem.point_cache.Len() > point_cache_size {
+				b := problem.point_cache.Back()
+				problem.point_cache.Remove(b)
+			}
+		}
+	}
+	return f
 }
 
 func (problem *Problem) Gradient(p Point) Point {
-	if problem.GradientFunc != nil {
-		return problem.GradientFunc(p)
+	c := (*ProblemPointCache)(nil)
+	e := (*list.Element)(nil)
+	for e = problem.point_cache.Front(); e != nil; e = e.Next() {
+		c = e.Value.(*ProblemPointCache)
+		if c.point.Equal(p) {
+			if c.gradient != nil {
+				problem.point_cache.MoveToFront(e)
+				return *c.gradient
+			}
+			break
+		} else {
+			c = nil
+		}
 	}
-	_, g := problem.ValueAndGradientFunc(p)
-	return g
+	f := (*float64)(nil)
+	g := (*Point)(nil)
+	if problem.GradientFunc != nil {
+		gv := problem.GradientFunc(p)
+		g = &gv
+	} else {
+		fv, gv := problem.ValueAndGradientFunc(p)
+		g = &gv
+		f = &fv
+	}
+	if point_cache_size > 0 {
+		if c != nil {
+			if f != nil {
+				c.value = f
+			}
+			c.gradient = g
+			problem.point_cache.MoveToFront(e)
+		} else {
+			problem.point_cache.PushFront(
+				&ProblemPointCache{
+					point:    p,
+					value:    f,
+					gradient: g})
+			if problem.point_cache.Len() > point_cache_size {
+				problem.point_cache.Remove(problem.point_cache.Back())
+			}
+		}
+	}
+	return *g
 }
 
 func (problem *Problem) Project(p Point) Point {
@@ -219,25 +336,50 @@ func (problem *Problem) LineUpdate(p Point, d Point) {
 	}
 	problem.LinePoint = p
 	problem.LineDirection = d
+	problem.line_cache = make(map[float64]*ProblemLineCache)
 }
 
 func (problem *Problem) LineValue(alpha float64) float64 {
-	if problem.LineValueFunc != nil {
-		return problem.LineValueFunc(alpha)
+	c := problem.line_cache[alpha]
+	if c == nil {
+		c = &ProblemLineCache{}
+		problem.line_cache[alpha] = c
 	}
-	p := Sum(problem.LinePoint, problem.LineDirection.Scale(alpha))
-	p = problem.Project(p)
-	return problem.Value(p)
+	if c.value != nil {
+		return *c.value
+	}
+	v := 0.0
+	if problem.LineValueFunc != nil {
+		v = problem.LineValueFunc(alpha)
+	} else {
+		p := Sum(problem.LinePoint, problem.LineDirection.Scale(alpha))
+		p = problem.Project(p)
+		v = problem.Value(p)
+	}
+	c.value = &v
+	return v
 }
 
 func (problem *Problem) LineGradient(alpha float64) float64 {
-	if problem.LineGradientFunc != nil {
-		return problem.LineGradientFunc(alpha)
+	c := problem.line_cache[alpha]
+	if c == nil {
+		c = &ProblemLineCache{}
+		problem.line_cache[alpha] = c
 	}
-	p := Sum(problem.LinePoint, problem.LineDirection.Scale(alpha))
-	p = problem.Project(p)
-	g := problem.GradientProject(p, problem.Gradient(p))
-	return g.InnerProd(problem.LineDirection)
+	if c.gradient != nil {
+		return *c.gradient
+	}
+	v := 0.0
+	if problem.LineGradientFunc != nil {
+		v = problem.LineGradientFunc(alpha)
+	} else {
+		p := Sum(problem.LinePoint, problem.LineDirection.Scale(alpha))
+		p = problem.Project(p)
+		g := problem.GradientProject(p, problem.Gradient(p))
+		v = g.InnerProd(problem.LineDirection)
+	}
+	c.gradient = &v
+	return v
 }
 
 type LineSearch interface {
@@ -484,7 +626,7 @@ func (s *StrongWolfeLineSearch) Search(p *Problem, alpha float64) float64 {
 type Solver interface {
 	Check(float64, float64) int
 	Solve(*Problem, Point) (float64, Point)
-	Init()
+	Init(map[string]interface{})
 }
 
 type SolverBase struct {
@@ -506,9 +648,19 @@ func (solver *SolverBase) Check(c, pc float64) int {
 	return Forward
 }
 
-func (solver *SolverBase) Init() {
-	solver.MaxIter = 30
-	solver.Line = &StrongWolfeLineSearch{}
+func (solver *SolverBase) Init(kwds map[string]interface{}) {
+	solver.MaxIter = 0
+	if v, ok := kwds["MaxIter"]; ok {
+		solver.MaxIter = v.(int)
+	} else {
+		solver.MaxIter = 30
+	}
+	if v, ok := kwds["LineSearch"]; ok {
+		solver.Line = v.(LineSearch)
+	}
+	if solver.Line == nil {
+		solver.Line = &StrongWolfeLineSearch{}
+	}
 }
 
 type GradientDescentSolver struct {
@@ -632,9 +784,13 @@ type ConjugateGradientSolver struct {
 	Beta ConjugateGradientBeta
 }
 
-func (solver *ConjugateGradientSolver) Init() {
-	solver.SolverBase.Init()
-	solver.Beta = &ConjugateGradientBetaPRP{}
+func (solver *ConjugateGradientSolver) Init(kwds map[string]interface{}) {
+	solver.SolverBase.Init(kwds)
+	if v, ok := kwds["Beta"]; ok {
+		solver.Beta = v.(ConjugateGradientBeta)
+	} else {
+		solver.Beta = &ConjugateGradientBetaPRP{}
+	}
 }
 
 func (solver *ConjugateGradientSolver) Solve(problem *Problem, p Point) (float64, Point) {
@@ -703,9 +859,13 @@ type LmBFGSSolver struct {
 	Recent int
 }
 
-func (solver *LmBFGSSolver) Init() {
-	solver.SolverBase.Init()
-	solver.Recent = 5
+func (solver *LmBFGSSolver) Init(kwds map[string]interface{}) {
+	solver.SolverBase.Init(kwds)
+	if v, ok := kwds["Recent"]; ok {
+		solver.Recent = v.(int)
+	} else {
+		solver.Recent = 0
+	}
 }
 
 func (solver *LmBFGSSolver) Solve(problem *Problem, p Point) (float64, Point) {
