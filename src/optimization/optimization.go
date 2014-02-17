@@ -382,10 +382,6 @@ func (problem *Problem) LineGradient(alpha float64) float64 {
 	return v
 }
 
-type LineSearch interface {
-	Search(*Problem, float64) float64
-}
-
 type DerivativeLinePoint struct {
 	problem  *Problem
 	point    float64
@@ -549,9 +545,7 @@ func zoom(p *Problem, c1, c2 float64,
 	return ah
 }
 
-type BacktrackingLineSearch struct{}
-
-func (s *BacktrackingLineSearch) Search(p *Problem, alpha float64) float64 {
+func BacktrackingLineSearch(p *Problem, alpha float64) float64 {
 	sufficient_decrease := .25 // should be in (0, .5),
 	backstep := .7             // should be in (0, 1)
 	alpha_epsilon := 1.e-100
@@ -570,9 +564,7 @@ func (s *BacktrackingLineSearch) Search(p *Problem, alpha float64) float64 {
 	return T.Point()
 }
 
-type StrongWolfeLineSearch struct{}
-
-func (s *StrongWolfeLineSearch) Search(p *Problem, alpha float64) float64 {
+func StrongWolfeLineSearch(p *Problem, alpha float64) float64 {
 	alpha_max := 1.e99
 	max_iter := 10
 	zoom_max_iter := 10
@@ -630,7 +622,7 @@ type Solver interface {
 type SolverBase struct {
 	CheckFunc func(float64, float64) int
 	MaxIter   int
-	Line      LineSearch
+	Line      func(*Problem, float64) float64
 }
 
 func (solver *SolverBase) Check(c, pc float64) int {
@@ -654,10 +646,9 @@ func (solver *SolverBase) Init(kwds map[string]interface{}) {
 		solver.MaxIter = 30
 	}
 	if v, ok := kwds["LineSearch"]; ok {
-		solver.Line = v.(LineSearch)
-	}
-	if solver.Line == nil {
-		solver.Line = &StrongWolfeLineSearch{}
+		solver.Line = v.(func(*Problem, float64) float64)
+	} else {
+		solver.Line = StrongWolfeLineSearch
 	}
 }
 
@@ -686,7 +677,7 @@ func (solver *GradientDescentSolver) Solve(problem *Problem, p Point) (float64, 
 			alpha *= pre_dg / dg
 		}
 		pre_dg = dg
-		alpha = line_search.Search(problem, alpha)
+		alpha = line_search(problem, alpha)
 		pn := Sum(p, d.Scale(alpha))
 		pn = problem.Project(pn)
 		nc := problem.LineValue(alpha)
@@ -817,7 +808,7 @@ func (solver *ConjugateGradientSolver) Solve(problem *Problem, p Point) (float64
 			alpha = pre_dg / dg
 		}
 		pre_dg = dg
-		alpha = line_search.Search(problem, alpha)
+		alpha = line_search(problem, alpha)
 		pn := Sum(p, d.Scale(alpha))
 		problem.Project(pn)
 		nc := problem.LineValue(alpha)
@@ -862,19 +853,14 @@ func (solver *LmBFGSSolver) Init(kwds map[string]interface{}) {
 	if v, ok := kwds["Recent"]; ok {
 		solver.Recent = v.(int)
 	} else {
-		solver.Recent = 0
+		solver.Recent = 1
 	}
 }
 
 func (solver *LmBFGSSolver) Solve(problem *Problem, p Point) (float64, Point) {
 	line_search := solver.Line
-	if line_search == nil {
-		line_search = &StrongWolfeLineSearch{}
-	}
 	recent := solver.Recent
-	if recent == 0 {
-		recent = 5
-	}
+	recent = 5
 	alpha := 0.0
 	p = problem.Project(p)
 	c := problem.Value(p)
@@ -946,7 +932,7 @@ func (solver *LmBFGSSolver) Solve(problem *Problem, p Point) (float64, Point) {
 			}
 		}
 		pre_c = c
-		alpha = line_search.Search(problem, alpha)
+		alpha = line_search(problem, alpha)
 		nc := problem.LineValue(alpha)
 		result := solver.Check(nc, c)
 		if result == BreakRollback {
