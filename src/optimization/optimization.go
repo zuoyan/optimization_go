@@ -387,12 +387,10 @@ type LineSearch interface {
 }
 
 type DerivativeLinePoint struct {
-	problem      *Problem
-	point        float64
-	value        float64
-	has_value    bool
-	gradient     float64
-	has_gradient bool
+	problem  *Problem
+	point    float64
+	value    *float64
+	gradient *float64
 }
 
 func (a *DerivativeLinePoint) Point() float64 {
@@ -400,19 +398,19 @@ func (a *DerivativeLinePoint) Point() float64 {
 }
 
 func (a *DerivativeLinePoint) Value() float64 {
-	if !a.has_value {
-		a.value = a.problem.LineValue(a.point)
-		a.has_value = true
+	if a.value == nil {
+		v := a.problem.LineValue(a.point)
+		a.value = &v
 	}
-	return a.value
+	return *a.value
 }
 
 func (a *DerivativeLinePoint) Gradient() float64 {
-	if !a.has_gradient {
-		a.gradient = a.problem.LineGradient(a.point)
-		a.has_gradient = true
+	if a.gradient == nil {
+		v := a.problem.LineGradient(a.point)
+		a.gradient = &v
 	}
-	return a.gradient
+	return *a.gradient
 }
 
 func cubicMin(ax, ay, ag, bx, by, bg float64) float64 {
