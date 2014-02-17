@@ -6,12 +6,18 @@ import (
 )
 
 const (
-	dbl_max     = math.MaxFloat64
-	dbl_epsilon = 2.22044604925031308085e-16
+	dbl_max       = math.MaxFloat64
+	dbl_epsilon   = 2.22044604925031308085e-16
+	BreakRollback = -2
+	BreakKeep     = -1
+	BreakMax      = 0
+	Rollback      = 1
+	Forward       = 2
 )
 
 // TODO: COW(copy on write)? anytime I need to write, I just copy. But we can do
 // better to avoid the copy if we know the reference count is one?
+// TODO: Sparse
 type Point struct {
 	Factor float64
 	Dense  []float64
@@ -150,17 +156,40 @@ func (a *Point) InnerProd(b Point) float64 {
 	return s * a.Factor * b.Factor
 }
 
+type LineValueGradient struct {
+	point    float64
+	value    float64
+	gradient float64
+}
+
 type Problem struct {
-	Value                func(Point) float64
-	Gradient             func(Point) Point
+	LinePoint            Point
+	LineDirection        Point
+	ValueFunc            func(Point) float64
+	GradientFunc         func(Point) Point
+	ValueAndGradientFunc func(Point) (float64, Point)
 	ProjectFunc          func(Point) Point
 	DirectionProjectFunc func(Point, Point) Point
 	GradientProjectFunc  func(Point, Point) Point
-	LinePoint            Point
-	LineDirection        Point
-	LineUpdateCallback   func(Point, Point)
+	LineUpdateFunc       func(Point, Point)
 	LineValueFunc        func(float64) float64
 	LineGradientFunc     func(float64) float64
+}
+
+func (problem *Problem) Value(p Point) float64 {
+	if problem.ValueFunc != nil {
+		return problem.ValueFunc(p)
+	}
+	v, _ := problem.ValueAndGradientFunc(p)
+	return v
+}
+
+func (problem *Problem) Gradient(p Point) Point {
+	if problem.GradientFunc != nil {
+		return problem.GradientFunc(p)
+	}
+	_, g := problem.ValueAndGradientFunc(p)
+	return g
 }
 
 func (problem *Problem) Project(p Point) Point {
@@ -185,8 +214,8 @@ func (problem *Problem) GradientProject(p Point, g Point) Point {
 }
 
 func (problem *Problem) LineUpdate(p Point, d Point) {
-	if problem.LineUpdateCallback != nil {
-		problem.LineUpdateCallback(p, d)
+	if problem.LineUpdateFunc != nil {
+		problem.LineUpdateFunc(p, d)
 	}
 	problem.LinePoint = p
 	problem.LineDirection = d
@@ -215,7 +244,7 @@ type LineSearch interface {
 	Search(*Problem, float64) float64
 }
 
-type FirstLinePoint struct {
+type DerivativeLinePoint struct {
 	problem      *Problem
 	point        float64
 	value        float64
@@ -224,11 +253,11 @@ type FirstLinePoint struct {
 	has_gradient bool
 }
 
-func (a *FirstLinePoint) Point() float64 {
+func (a *DerivativeLinePoint) Point() float64 {
 	return a.point
 }
 
-func (a *FirstLinePoint) Value() float64 {
+func (a *DerivativeLinePoint) Value() float64 {
 	if !a.has_value {
 		a.value = a.problem.LineValue(a.point)
 		a.has_value = true
@@ -236,7 +265,7 @@ func (a *FirstLinePoint) Value() float64 {
 	return a.value
 }
 
-func (a *FirstLinePoint) Gradient() float64 {
+func (a *DerivativeLinePoint) Gradient() float64 {
 	if !a.has_gradient {
 		a.gradient = a.problem.LineGradient(a.point)
 		a.has_gradient = true
@@ -339,13 +368,13 @@ func cubicInterpolate(ax, ay, ag, bx, by, bg, plx, prx float64) float64 {
 }
 
 func zoom(p *Problem, c1, c2 float64,
-	o, al, ah FirstLinePoint,
-	max_iter int) FirstLinePoint {
+	o, al, ah DerivativeLinePoint,
+	max_iter int) DerivativeLinePoint {
 	a := al
 	plx := -dbl_max
 	prx := dbl_max
 	for iter := 0; iter < max_iter; iter++ {
-		a = FirstLinePoint{
+		a = DerivativeLinePoint{
 			problem: p,
 			point: cubicInterpolate(al.Point(), al.Value(), al.Gradient(),
 				ah.Point(), ah.Value(), ah.Gradient(),
@@ -390,10 +419,10 @@ func (s *BacktrackingLineSearch) Search(p *Problem, alpha float64) float64 {
 	if alpha == 0 {
 		alpha = 1.0
 	}
-	O := FirstLinePoint{problem: p, point: 0.0}
-	T := FirstLinePoint{problem: p, point: alpha}
+	O := DerivativeLinePoint{problem: p, point: 0.0}
+	T := DerivativeLinePoint{problem: p, point: alpha}
 	for T.Value() > O.Value()+sufficient_decrease*T.Point()*O.Gradient() {
-		T = FirstLinePoint{problem: p, point: T.Point() * backstep}
+		T = DerivativeLinePoint{problem: p, point: T.Point() * backstep}
 		if T.Point() <= alpha_epsilon {
 			break
 		}
@@ -410,7 +439,7 @@ func (s *StrongWolfeLineSearch) Search(p *Problem, alpha float64) float64 {
 	sufficient_decrease := 1.e-4
 	curvature := 0.1
 
-	O := FirstLinePoint{problem: p, point: 0}
+	O := DerivativeLinePoint{problem: p, point: 0}
 	if alpha == 0 {
 		x_infty := p.LinePoint.AbsMax()
 		if x_infty > 0 {
@@ -422,7 +451,7 @@ func (s *StrongWolfeLineSearch) Search(p *Problem, alpha float64) float64 {
 	if alpha == 0 {
 		alpha = 1.0
 	}
-	A := FirstLinePoint{problem: p, point: alpha}
+	A := DerivativeLinePoint{problem: p, point: alpha}
 	Ap := O
 	for iter := 0; iter < max_iter; iter++ {
 		if A.Value() > O.Value()+sufficient_decrease*A.Point()*O.Gradient() || (A.Value() >= Ap.Value() && iter > 0) {
@@ -444,7 +473,7 @@ func (s *StrongWolfeLineSearch) Search(p *Problem, alpha float64) float64 {
 		if x <= A.Point() || x >= alpha_max {
 			x = A.Point() * 2.0 * (float64(iter) + 2.0)
 		}
-		A = FirstLinePoint{problem: p, point: x}
+		A = DerivativeLinePoint{problem: p, point: x}
 	}
 	if A.Value() < O.Value() {
 		return A.Point()
@@ -452,51 +481,47 @@ func (s *StrongWolfeLineSearch) Search(p *Problem, alpha float64) float64 {
 	return O.Point()
 }
 
-const (
-	check_break_rollback = -2
-	check_break_keep     = -1
-	check_break_max      = 0
-	check_rollback       = 1
-	check_forward        = 2
-)
-
 type Solver interface {
-	Solve(*Problem, Point) (float64, Point)
 	Check(float64, float64) int
+	Solve(*Problem, Point) (float64, Point)
+	Init()
 }
 
 type SolverBase struct {
+	CheckFunc func(float64, float64) int
+	MaxIter   int
+	Line      LineSearch
 }
 
 func (solver *SolverBase) Check(c, pc float64) int {
+	if solver.CheckFunc != nil {
+		return solver.CheckFunc(c, pc)
+	}
 	if c > pc {
-		return check_break_rollback
+		return BreakRollback
 	}
 	if c == pc {
-		return check_break_keep
+		return BreakKeep
 	}
-	return check_forward
+	return Forward
+}
+
+func (solver *SolverBase) Init() {
+	solver.MaxIter = 30
+	solver.Line = &StrongWolfeLineSearch{}
 }
 
 type GradientDescentSolver struct {
 	SolverBase
-	Line    LineSearch
-	MaxIter int
 }
 
 func (solver *GradientDescentSolver) Solve(problem *Problem, p Point) (float64, Point) {
 	line_search := solver.Line
-	if line_search == nil {
-		line_search = &StrongWolfeLineSearch{}
-	}
 	problem.Project(p)
 	cost := problem.Value(p)
 	pre_dg := 0.0
 	alpha := 0.0
 	max_iter := solver.MaxIter
-	if max_iter == 0 {
-		max_iter = 30
-	}
 	for iter := 0; iter < max_iter; iter++ {
 		g := problem.Gradient(p)
 		g = problem.GradientProject(p, g)
@@ -516,12 +541,12 @@ func (solver *GradientDescentSolver) Solve(problem *Problem, p Point) (float64, 
 		pn = problem.Project(pn)
 		nc := problem.LineValue(alpha)
 		result := solver.Check(nc, cost)
-		if result == check_break_rollback || result == check_rollback {
+		if result == BreakRollback || result == Rollback {
 			break
 		}
 		cost = nc
 		p = pn
-		if result < check_break_max {
+		if result < BreakMax {
 			break
 		}
 	}
@@ -604,20 +629,17 @@ func (s *ConjugateGradientBetaDescent) Beta(alpha float64, direction, previous_g
 
 type ConjugateGradientSolver struct {
 	SolverBase
-	Line    LineSearch
-	MaxIter int
-	Beta    ConjugateGradientBeta
+	Beta ConjugateGradientBeta
+}
+
+func (solver *ConjugateGradientSolver) Init() {
+	solver.SolverBase.Init()
+	solver.Beta = &ConjugateGradientBetaPRP{}
 }
 
 func (solver *ConjugateGradientSolver) Solve(problem *Problem, p Point) (float64, Point) {
 	line_search := solver.Line
 	beta := solver.Beta
-	if line_search == nil {
-		line_search = &StrongWolfeLineSearch{}
-	}
-	if beta == nil {
-		beta = &ConjugateGradientBetaPRP{}
-	}
 	cost := problem.Value(p)
 	g := problem.GradientProject(p, problem.Gradient(p))
 	d := g.Scale(-1)
@@ -625,9 +647,6 @@ func (solver *ConjugateGradientSolver) Solve(problem *Problem, p Point) (float64
 	pre_dg := 0.0
 	alpha := 0.0
 	max_iter := solver.MaxIter
-	if max_iter == 0 {
-		max_iter = 30
-	}
 	pg := Point{}
 	for iter := 0; iter < max_iter; iter++ {
 		dg := d.InnerProd(g)
@@ -649,17 +668,17 @@ func (solver *ConjugateGradientSolver) Solve(problem *Problem, p Point) (float64
 		problem.Project(pn)
 		nc := problem.LineValue(alpha)
 		result := solver.Check(nc, cost)
-		if result == check_break_rollback {
+		if result == BreakRollback {
 			break
 		}
-		if result == check_forward || result == check_break_keep {
+		if result == Forward || result == BreakKeep {
 			cost = nc
 			p = pn
 		}
-		if iter+1 >= max_iter || result < check_break_max {
+		if iter+1 >= max_iter || result < BreakMax {
 			break
 		}
-		if result == check_forward {
+		if result == Forward {
 			pg = g
 			g = problem.GradientProject(p, problem.Gradient(p))
 			// Note: line search is not exact, so disable powell's
@@ -681,9 +700,12 @@ func (solver *ConjugateGradientSolver) Solve(problem *Problem, p Point) (float64
 
 type LmBFGSSolver struct {
 	SolverBase
-	Line    LineSearch
-	MaxIter int
-	Recent  int
+	Recent int
+}
+
+func (solver *LmBFGSSolver) Init() {
+	solver.SolverBase.Init()
+	solver.Recent = 5
 }
 
 func (solver *LmBFGSSolver) Solve(problem *Problem, p Point) (float64, Point) {
@@ -769,22 +791,22 @@ func (solver *LmBFGSSolver) Solve(problem *Problem, p Point) (float64, Point) {
 		alpha = line_search.Search(problem, alpha)
 		nc := problem.LineValue(alpha)
 		result := solver.Check(nc, c)
-		if result == check_break_rollback {
+		if result == BreakRollback {
 			break
 		}
 		pp := p
-		if result == check_break_keep || result == check_forward {
+		if result == BreakKeep || result == Forward {
 			c = nc
 			p = Sum(p, d.Scale(alpha))
 			p = problem.Project(p)
 		}
-		if result < check_break_max {
+		if result < BreakMax {
 			break
 		}
 		if iter+1 >= max_iter {
 			break
 		}
-		if result == check_forward {
+		if result == Forward {
 			k := iter % recent
 			logs_dx[k] = Sum(p, pp.Scale(-1))
 			pg := g
@@ -796,7 +818,7 @@ func (solver *LmBFGSSolver) Solve(problem *Problem, p Point) (float64, Point) {
 			}
 			recent_start = iter + 1
 		}
-		pre_is_rollback = (result == check_rollback)
+		pre_is_rollback = (result == Rollback)
 	}
 	return c, p
 }
