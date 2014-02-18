@@ -1,59 +1,114 @@
 package main
 
 import (
-	"fmt"
+	"flag"
+	"log"
+	"math/rand"
 	"optimization"
 )
 
 var (
-	cf = 0
-	cg = 0
+	cf       = 0
+	cg       = 0
+	row      = flag.Int("row", 4, "row of matrix")
+	col      = flag.Int("col", 4, "col of matrix")
+	max_iter = flag.Int("max_iter", 30, "max iteration")
 )
-
-func ipow(x float64, n int) float64 {
-	r := 1.0
-	for i := 0; i < n; i++ {
-		r = r * x
-	}
-	return r
-}
 
 func square(x float64) float64 {
 	return x * x
 }
 
-func opt_func(v optimization.Point) float64 {
+func mv(A []float64, x []float64) []float64 {
+	n := len(x)
+	m := len(A) / n
+	if len(A) != m*n {
+		log.Fatalf("invalid size A#=%v x#=%v", len(A), len(x))
+	}
+	r := make([]float64, m)
+	for i := 0; i < m; i++ {
+		for j := 0; j < n; j++ {
+			r[i] += A[i*n+j] * x[j]
+		}
+	}
+	return r
+}
+
+func mtv(A []float64, x []float64) []float64 {
+	n := len(x)
+	m := len(A) / n
+	if len(A) != m*n {
+		log.Fatalf("invalid size A#=%v x#=%v", len(A), len(x))
+	}
+	r := make([]float64, m)
+	for j := 0; j < n; j++ {
+		for i := 0; i < m; i++ {
+			r[i] += A[i+j*m] * x[j]
+		}
+	}
+	return r
+}
+
+func opt_func(A []float64, b []float64, v optimization.Point) float64 {
+	if len(A) != *row**col || len(b) != *row {
+		log.Fatalf("invalid size row=%v col=%v len(A)=%v len(b)=%v", row, col, len(A), len(b))
+	}
 	cf += 1
-	x, y := v.Dense[0], v.Dense[1]
-	fmt.Printf("cal func(%f, %f)\n", x, y)
-	return ipow(x-1.5, 4) + ipow(y-2.5, 4)
+	r := mv(A, v.Dense)
+	s := 0.0
+	for i := 0; i < len(r); i++ {
+		r[i] *= v.Factor
+		r[i] -= b[i]
+		s += square(r[i])
+	}
+	log.Printf("caled func(%s) = %f\n", v.String(), s)
+	return s
 }
 
-func opt_grad(v optimization.Point) optimization.Point {
+func opt_grad(A []float64, b []float64, v optimization.Point) optimization.Point {
 	cg += 1
-	x, y := v.Dense[0], v.Dense[1]
-	fmt.Printf("cal grad(%f, %f)\n", x, y)
-	gx, gy := 4*ipow(x-1.5, 3), 4*ipow(y-2.5, 3)
-	return optimization.DensePoint([]float64{gx, gy})
+	r := mv(A, v.Dense)
+	for i := 0; i < len(r); i++ {
+		r[i] *= v.Factor
+		r[i] -= b[i]
+	}
+	gd := mtv(A, r)
+	g := optimization.Point{Factor: 2.0, Dense: gd}
+	log.Printf("caled grad(%s) = %s\n", v.String(), g.String())
+	return g
 }
 
-func test_solver(name string, solver optimization.Solver) {
-	fmt.Printf("solver %s ...\n", name)
+func test_solver(A, b []float64, p optimization.Point, name string, solver optimization.Solver) {
+	log.Printf("solver %s ...\n", name)
 	cf, cg = 0, 0
-	solver.Init(map[string]interface{}{"MaxIter": 30})
-	p := optimization.DensePoint([]float64{2.0, 2.0})
+	solver.Init(map[string]interface{}{"MaxIter": *max_iter})
 	problem := &optimization.Problem{
-		ValueFunc:    opt_func,
-		GradientFunc: opt_grad,
+		ValueFunc:    func(p optimization.Point) float64 { return opt_func(A, b, p) },
+		GradientFunc: func(p optimization.Point) optimization.Point { return opt_grad(A, b, p) },
 	}
 	v, m := solver.Solve(problem, p)
-	fmt.Printf("solver %s min value %v\n", name, v)
-	fmt.Printf("solver %s min at %v\n", name, m.Dense)
-	fmt.Printf("solver %s #f=%v  #g=%v\n", name, cf, cg)
+	log.Printf("solver %s min value %v at %v #f=%v #g=%v\n", name, v, m.Dense, cf, cg)
 }
 
 func main() {
-	test_solver("gradient", &optimization.GradientDescentSolver{})
-	test_solver("conjugate", &optimization.ConjugateGradientSolver{})
-	test_solver("lm_bfgs", &optimization.LmBFGSSolver{})
+	flag.Parse()
+	A := make([]float64, *row**col)
+	x := make([]float64, *col)
+	for i := 0; i < len(A); i++ {
+		A[i] = rand.Float64()
+	}
+	for i := 0; i < len(x); i++ {
+		x[i] = rand.Float64()
+	}
+	b := mv(A, x)
+	log.Printf("perfect solution at %v\n", x)
+	pd := make([]float64, *col)
+	for i := 0; i < *col; i++ {
+		pd[i] = rand.Float64()
+	}
+	p := optimization.DensePoint(pd)
+	log.Printf("init solution at %v\n", pd)
+	test_solver(A, b, p, "lm_bfgs", &optimization.LmBFGSSolver{})
+	test_solver(A, b, p, "gradient", &optimization.GradientDescentSolver{})
+	test_solver(A, b, p, "conjugate", &optimization.ConjugateGradientSolver{})
 }
