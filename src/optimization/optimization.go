@@ -553,9 +553,9 @@ func zoom(p *Problem, c1, c2 float64,
 }
 
 func BacktrackingLineSearch(p *Problem, alpha float64) float64 {
-	sufficient_decrease := .25 // should be in (0, .5),
-	backstep := .7             // should be in (0, 1)
-	alpha_epsilon := 1.e-100
+	const sufficient_decrease = .25 // should be in (0, .5),
+	const backstep = .7             // should be in (0, 1)
+	const alpha_epsilon = 1.e-100
 
 	if alpha == 0 {
 		alpha = 1.0
@@ -572,11 +572,11 @@ func BacktrackingLineSearch(p *Problem, alpha float64) float64 {
 }
 
 func StrongWolfeLineSearch(p *Problem, alpha float64) float64 {
-	alpha_max := 1.e99
-	max_iter := 10
-	zoom_max_iter := 10
-	sufficient_decrease := 1.e-4
-	curvature := 0.1
+	const alpha_max = dbl_max
+	const max_iter = 10
+	const zoom_max_iter = 10
+	const sufficient_decrease = 1.e-4
+	const curvature = 0.1
 
 	O := DerivativeLinePoint{problem: p, point: 0}
 	if alpha == 0 {
@@ -748,7 +748,7 @@ func ConjugateGradientBetaDY(alpha float64, direction, previous_gradient, point,
 
 func ConjugateGradientBetaDescent(alpha float64, direction, previous_gradient, point, gradient Point) float64 {
 	// y = g - pg
-	eta2 := 1.e-4
+	const eta2 = 1.e-4
 	gg := gradient.SquareSum()
 	gp := gradient.InnerProd(previous_gradient)
 	gd := gradient.InnerProd(direction)
