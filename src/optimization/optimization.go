@@ -9,13 +9,12 @@ import (
 )
 
 const (
-	dbl_max          = math.MaxFloat64
-	dbl_epsilon      = 2.22044604925031308085e-16
 	BreakRollback    = -2
 	BreakKeep        = -1
 	BreakMax         = 0
 	Rollback         = 1
 	Forward          = 2
+	dbl_epsilon      = 2.22044604925031308085e-16
 	point_cache_size = 4
 )
 
@@ -419,7 +418,7 @@ func (a *DerivativeLinePoint) Gradient() float64 {
 func cubicMin(ax, ay, ag, bx, by, bg float64) float64 {
 	dx := bx - ax
 	if dx == 0 {
-		return dbl_max
+		return math.MaxFloat64
 	}
 	dy := by - ay
 	Bg := dy / dx
@@ -427,7 +426,7 @@ func cubicMin(ax, ay, ag, bx, by, bg float64) float64 {
 	Z := T - Bg
 	q := Z*Z - ag*bg
 	if q < 0 {
-		return dbl_max
+		return math.MaxFloat64
 	}
 	q = math.Sqrt(q)
 	if dx < 0 {
@@ -439,19 +438,19 @@ func cubicMin(ax, ay, ag, bx, by, bg float64) float64 {
 		}
 	}
 	if abs(T) < dbl_epsilon {
-		return dbl_max
+		return math.MaxFloat64
 	}
 	return ax + dx*(Z+ag+q)/(3*T)
 }
 
 func quadMin(ax, ay, ag, bx, by float64) float64 {
 	if ax == bx {
-		return dbl_max
+		return math.MaxFloat64
 	}
 	Bg := (by - ay) / (bx - ax)
 	gg := (Bg - ag) / (bx - ax)
 	if gg < dbl_epsilon {
-		return dbl_max
+		return math.MaxFloat64
 	}
 	return ax - ag/(2*gg)
 }
@@ -514,8 +513,8 @@ func zoom(p *Problem, c1, c2 float64,
 	o, al, ah DerivativeLinePoint,
 	max_iter int) DerivativeLinePoint {
 	a := al
-	plx := -dbl_max
-	prx := dbl_max
+	plx := -math.MaxFloat64
+	prx := math.MaxFloat64
 	for iter := 0; iter < max_iter; iter++ {
 		a = DerivativeLinePoint{
 			problem: p,
@@ -572,7 +571,7 @@ func BacktrackingLineSearch(p *Problem, alpha float64) float64 {
 }
 
 func StrongWolfeLineSearch(p *Problem, alpha float64) float64 {
-	const alpha_max = dbl_max
+	const alpha_max = math.MaxFloat64
 	const max_iter = 10
 	const zoom_max_iter = 10
 	const sufficient_decrease = 1.e-4
