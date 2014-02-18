@@ -53,8 +53,6 @@ func imax(x int, y int) int {
 	return y
 }
 
-// TODO: COW(copy on write)? anytime I need to write, I just copy. But we can do
-// better to avoid the copy if we know the reference count is one?
 // TODO: Sparse
 type Point struct {
 	Factor float64
