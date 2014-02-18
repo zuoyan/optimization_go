@@ -694,13 +694,7 @@ func (solver *GradientDescentSolver) Solve(problem *Problem, p Point) (float64, 
 	return cost, p
 }
 
-type ConjugateGradientBeta interface {
-	Beta(alpha float64, direction, previous_gradient, point, gradient Point) float64
-}
-
-type ConjugateGradientBetaPRP struct{}
-
-func (s *ConjugateGradientBetaPRP) Beta(alpha float64, direction, previous_gradient, point, gradient Point) float64 {
+func ConjugateGradientBetaPRP(alpha float64, direction, previous_gradient, point, gradient Point) float64 {
 	// <g, g - pg> / <pg, pg>
 	den := previous_gradient.SquareSum()
 	num := gradient.SquareSum() - gradient.InnerProd(previous_gradient)
@@ -710,9 +704,7 @@ func (s *ConjugateGradientBetaPRP) Beta(alpha float64, direction, previous_gradi
 	return 0.0
 }
 
-type ConjugateGradientBetaFR struct{}
-
-func (s *ConjugateGradientBetaFR) Beta(alpha float64, direction, previous_gradient, point, gradient Point) float64 {
+func ConjugateGradientBetaFR(alpha float64, direction, previous_gradient, point, gradient Point) float64 {
 	// <g, g> / <pg, pg>
 	num := gradient.SquareSum()
 	den := previous_gradient.SquareSum()
@@ -722,9 +714,7 @@ func (s *ConjugateGradientBetaFR) Beta(alpha float64, direction, previous_gradie
 	return 0
 }
 
-type ConjugateGradientBetaHS struct{}
-
-func (s *ConjugateGradientBetaHS) Beta(alpha float64, direction, previous_gradient, point, gradient Point) float64 {
+func ConjugateGradientBetaHS(alpha float64, direction, previous_gradient, point, gradient Point) float64 {
 	// <g, g - pg> / <d, g - pg>
 	num := gradient.SquareSum() - gradient.InnerProd(previous_gradient)
 	den := direction.InnerProd(gradient) - direction.InnerProd(previous_gradient)
@@ -734,9 +724,7 @@ func (s *ConjugateGradientBetaHS) Beta(alpha float64, direction, previous_gradie
 	return 0
 }
 
-type ConjugateGradientBetaDY struct{}
-
-func (s *ConjugateGradientBetaDY) Beta(alpha float64, direction, previous_gradient, point, gradient Point) float64 {
+func ConjugateGradientBetaDY(alpha float64, direction, previous_gradient, point, gradient Point) float64 {
 	// <g, g> / <g - pg, d>
 	num := gradient.SquareSum()
 	den := gradient.InnerProd(direction) - previous_gradient.InnerProd(direction)
@@ -746,9 +734,7 @@ func (s *ConjugateGradientBetaDY) Beta(alpha float64, direction, previous_gradie
 	return 0
 }
 
-type ConjugateGradientBetaDescent struct{}
-
-func (s *ConjugateGradientBetaDescent) Beta(alpha float64, direction, previous_gradient, point, gradient Point) float64 {
+func ConjugateGradientBetaDescent(alpha float64, direction, previous_gradient, point, gradient Point) float64 {
 	// y = g - pg
 	eta2 := 1.e-4
 	g_g := gradient.SquareSum()
@@ -770,15 +756,15 @@ func (s *ConjugateGradientBetaDescent) Beta(alpha float64, direction, previous_g
 
 type ConjugateGradientSolver struct {
 	SolverBase
-	Beta ConjugateGradientBeta
+	Beta func(float64, Point, Point, Point, Point) float64
 }
 
 func (solver *ConjugateGradientSolver) Init(kwds map[string]interface{}) {
 	solver.SolverBase.Init(kwds)
 	if v, ok := kwds["Beta"]; ok {
-		solver.Beta = v.(ConjugateGradientBeta)
+		solver.Beta = v.(func(float64, Point, Point, Point, Point) float64)
 	} else {
-		solver.Beta = &ConjugateGradientBetaPRP{}
+		solver.Beta = ConjugateGradientBetaPRP
 	}
 }
 
@@ -831,7 +817,7 @@ func (solver *ConjugateGradientSolver) Solve(problem *Problem, p Point) (float64
 			if false && abs(g.InnerProd(pg)) >= .2*g.SquareSum() {
 				d = g.Scale(-1)
 			} else {
-				b := beta.Beta(alpha, d, pg, p, g)
+				b := beta(alpha, d, pg, p, g)
 				d = Sum(d.Scale(b), g.Scale(-1))
 			}
 		} else {
