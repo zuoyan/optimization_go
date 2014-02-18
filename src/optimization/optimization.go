@@ -4,7 +4,6 @@ package optimization
 import (
 	"container/list"
 	"fmt"
-	"log"
 	"math"
 )
 
@@ -673,11 +672,11 @@ func (solver *GradientDescentSolver) Solve(problem *Problem, p Point) (float64, 
 	for iter := 0; iter < max_iter; iter++ {
 		g := problem.Gradient(p)
 		g = problem.GradientProject(p, g)
-		log.Printf("iter=%v g=%v", iter, g.String())
+		// log.Printf("iter=%v g=%v", iter, g.String())
 		d := g.Scale(-1)
 		d = problem.DirectionProject(p, d)
 		dg := d.InnerProd(g)
-		log.Printf("iter=%v cost=%v dg=%v", iter, cost, dg)
+		// log.Printf("iter=%v cost=%v dg=%v", iter, cost, dg)
 		if dg >= 0 {
 			break
 		}
@@ -788,7 +787,7 @@ func (solver *ConjugateGradientSolver) Solve(problem *Problem, p Point) (float64
 	pg := Point{}
 	for iter := 0; iter < max_iter; iter++ {
 		dg := d.InnerProd(g)
-		log.Printf("iter=%v cost=%v dg=%v", iter, cost, dg)
+		// log.Printf("iter=%v cost=%v dg=%v", iter, cost, dg)
 		if dg >= 0 {
 			d = g.Scale(-1)
 			d = problem.DirectionProject(p, d)
@@ -868,7 +867,7 @@ func (solver *LmBFGSSolver) Solve(problem *Problem, p Point) (float64, Point) {
 	logs_dg := make([]Point, recent)
 	logs_dx := make([]Point, recent)
 	for iter := 0; iter < max_iter; iter++ {
-		log.Printf("iter=%v g=%v", iter, g.String())
+		// log.Printf("iter=%v g=%v", iter, g.String())
 		if iter > 0 {
 			k := (iter - 1) % recent
 			v := logs_dg[k].InnerProd(logs_dx[k])
@@ -881,7 +880,7 @@ func (solver *LmBFGSSolver) Solve(problem *Problem, p Point) (float64, Point) {
 		// calculation direction d
 		if pre_is_rollback || iter <= recent_start {
 			d = g.Scale(-1)
-			log.Printf("gradient descent direction %s", d.String())
+			// log.Printf("gradient descent direction %s", d.String())
 		} else {
 			q := g
 			km := imax(iter-recent, recent_start)
@@ -893,7 +892,7 @@ func (solver *LmBFGSSolver) Solve(problem *Problem, p Point) (float64, Point) {
 			}
 			num := logs_dx[(iter-1)%recent].InnerProd(logs_dg[(iter-1)%recent])
 			den := logs_dg[(iter-1)%recent].SquareSum()
-			log.Printf("num=%v den=%v q=%s", num, den, q.String())
+			// log.Printf("num=%v den=%v q=%s", num, den, q.String())
 			if den > 0 {
 				d = q.Scale(num / den)
 			} else {
@@ -905,16 +904,16 @@ func (solver *LmBFGSSolver) Solve(problem *Problem, p Point) (float64, Point) {
 				d = Sum(d, logs_dx[k].Scale(logs_alpha[k]-b))
 			}
 			d = d.Scale(-1)
-			log.Printf("bfgs direction %s", d.String())
+			// log.Printf("bfgs direction %s", d.String())
 		}
 		dg := d.InnerProd(g)
 		if dg >= 0 {
-			log.Printf("iter=%v recent_start=%v dg=%v restart", iter, recent_start, dg)
+			// log.Printf("iter=%v recent_start=%v dg=%v restart", iter, recent_start, dg)
 			d = g.Scale(-1)
 			dg = -g.SquareSum()
 			recent_start = iter
 		}
-		log.Printf("iter=%v cost=%v dg=%v recent_start=%v", iter, c, dg, recent_start)
+		// log.Printf("iter=%v cost=%v dg=%v recent_start=%v", iter, c, dg, recent_start)
 		if dg >= 0 {
 			break
 		}
@@ -929,7 +928,7 @@ func (solver *LmBFGSSolver) Solve(problem *Problem, p Point) (float64, Point) {
 		}
 		pre_c = c
 		alpha = line_search(problem, alpha)
-		log.Printf("line search got %v\n", alpha)
+		// log.Printf("line search got %v\n", alpha)
 		nc := problem.LineValue(alpha)
 		result := solver.Check(nc, c)
 		if result == BreakRollback {
