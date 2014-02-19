@@ -3,6 +3,7 @@ package optimization
 
 import (
 	"container/list"
+	"fmt"
 	"math"
 )
 
@@ -15,6 +16,22 @@ const (
 	dbl_epsilon      = 2.22044604925031308085e-16
 	point_cache_size = 4
 )
+
+func CheckResultString(result int) string {
+	if result == BreakRollback {
+		return "BreakRollback"
+	}
+	if result == BreakKeep {
+		return "BreakKeep"
+	}
+	if result == Rollback {
+		return "Rollback"
+	}
+	if result == Forward {
+		return "Forward"
+	}
+	return fmt.Sprintf("%v", result)
+}
 
 func abs(x float64) float64 {
 	if x < 0 {
@@ -75,6 +92,14 @@ type Problem struct {
 	LineUpdateFunc       func(Point, Point)
 	LineValueFunc        func(float64) float64
 	LineGradientFunc     func(float64) float64
+	NumValue             int
+	NumGradient          int
+	NumProject           int
+	NumDirectionProject  int
+	NumGradientProject   int
+	NumLineValue         int
+	NumLineUpdate        int
+	NumLineGradient      int
 	line_cache           map[float64]*ProblemLineCache
 	point_cache          list.List
 }
@@ -94,12 +119,14 @@ func (problem *Problem) Value(p Point) float64 {
 			c = nil
 		}
 	}
+	problem.NumValue++
 	f := 0.0
 	g := (*Point)(nil)
 	if problem.ValueFunc != nil {
 		f = problem.ValueFunc(p)
 	} else {
 		fv, gv := problem.ValueAndGradientFunc(p)
+		problem.NumGradient++
 		g = &gv
 		f = fv
 	}
@@ -140,12 +167,14 @@ func (problem *Problem) Gradient(p Point) Point {
 			c = nil
 		}
 	}
+	problem.NumGradient++
 	f := (*float64)(nil)
 	g := (*Point)(nil)
 	if problem.GradientFunc != nil {
 		gv := problem.GradientFunc(p)
 		g = &gv
 	} else {
+		problem.NumValue++
 		fv, gv := problem.ValueAndGradientFunc(p)
 		g = &gv
 		f = &fv
@@ -172,6 +201,7 @@ func (problem *Problem) Gradient(p Point) Point {
 }
 
 func (problem *Problem) Project(p Point) Point {
+	problem.NumProject++
 	if problem.ProjectFunc != nil {
 		return problem.ProjectFunc(p)
 	}
@@ -179,6 +209,7 @@ func (problem *Problem) Project(p Point) Point {
 }
 
 func (problem *Problem) DirectionProject(p Point, d Point) Point {
+	problem.NumDirectionProject++
 	if problem.DirectionProjectFunc != nil {
 		return problem.DirectionProjectFunc(p, d)
 	}
@@ -186,6 +217,7 @@ func (problem *Problem) DirectionProject(p Point, d Point) Point {
 }
 
 func (problem *Problem) GradientProject(p Point, g Point) Point {
+	problem.NumGradientProject++
 	if problem.GradientProjectFunc != nil {
 		return problem.GradientProjectFunc(p, g)
 	}
@@ -193,6 +225,7 @@ func (problem *Problem) GradientProject(p Point, g Point) Point {
 }
 
 func (problem *Problem) LineUpdate(p Point, d Point) {
+	problem.NumLineUpdate++
 	if problem.LineUpdateFunc != nil {
 		problem.LineUpdateFunc(p, d)
 	}
@@ -210,6 +243,7 @@ func (problem *Problem) LineValue(alpha float64) float64 {
 	if c.value != nil {
 		return *c.value
 	}
+	problem.NumLineValue++
 	v := 0.0
 	if problem.LineValueFunc != nil {
 		v = problem.LineValueFunc(alpha)
@@ -231,6 +265,7 @@ func (problem *Problem) LineGradient(alpha float64) float64 {
 	if c.gradient != nil {
 		return *c.gradient
 	}
+	problem.NumLineGradient++
 	v := 0.0
 	if problem.LineGradientFunc != nil {
 		v = problem.LineGradientFunc(alpha)
@@ -475,29 +510,69 @@ func StrongWolfeLineSearch(p *Problem, alpha float64) float64 {
 	return O.Point()
 }
 
+type SolverIterationStats struct {
+	Iteration             int
+	NumFunction           int
+	NumGradient           int
+	AccumulateNumFunction int
+	AccumulateNumGradient int
+	X                     Point
+	Y                     float64
+	G                     Point
+	CheckResult           int
+}
+
 type Solver interface {
-	Check(float64, float64) int
-	Solve(*Problem, Point) (float64, Point)
+	Check(*Problem, SolverIterationStats, Point, float64) int
+	Solve(*Problem, Point) (Point, float64)
 	Init(map[string]interface{})
+	Log(int, string)
+	Logf(int, string, ...interface{})
+	LogIterationStats(SolverIterationStats)
 }
 
 type SolverBase struct {
-	CheckFunc func(float64, float64) int
-	MaxIter   int
-	Line      func(*Problem, float64) float64
+	CheckFunc             func(*Problem, SolverIterationStats, Point, float64) int
+	MaxIter               int
+	Line                  func(*Problem, float64) float64
+	LogFunc               func(int, string)
+	LogIterationStatsFunc func(SolverIterationStats)
 }
 
-func (solver *SolverBase) Check(c, pc float64) int {
+func (solver *SolverBase) Check(problem *Problem, stats SolverIterationStats, xp Point, yp float64) int {
 	if solver.CheckFunc != nil {
-		return solver.CheckFunc(c, pc)
+		return solver.CheckFunc(problem, stats, xp, yp)
 	}
-	if c > pc {
+	y := stats.Y
+	if y > yp {
 		return BreakRollback
 	}
-	if c == pc {
+	if y == yp {
 		return BreakKeep
 	}
 	return Forward
+}
+
+func (solver *SolverBase) Log(level int, message string) {
+	if solver.LogFunc != nil {
+		solver.LogFunc(level, message)
+	}
+	return
+}
+
+func (solver *SolverBase) Logf(level int, format string, vs ...interface{}) {
+	solver.Log(level, fmt.Sprintf(format, vs...))
+}
+
+func (solver *SolverBase) LogIterationStats(stats SolverIterationStats) {
+	if solver.LogIterationStatsFunc != nil {
+		solver.LogIterationStatsFunc(stats)
+	} else {
+		solver.Logf(100, "iter=%v y=%v #f=%v/%v #g=%v/%v result=%s",
+			stats.Iteration, stats.Y, stats.NumFunction, stats.AccumulateNumFunction, stats.NumGradient, stats.AccumulateNumGradient,
+			CheckResultString(stats.CheckResult))
+	}
+	return
 }
 
 func (solver *SolverBase) Init(kwds map[string]interface{}) {
@@ -513,311 +588,12 @@ func (solver *SolverBase) Init(kwds map[string]interface{}) {
 		solver.Line = StrongWolfeLineSearch
 	}
 	if v, ok := kwds["CheckFunc"]; ok {
-		solver.CheckFunc = v.(func(float64, float64) int)
+		solver.CheckFunc = v.(func(*Problem, SolverIterationStats, Point, float64) int)
 	}
-}
-
-type GradientDescentSolver struct {
-	SolverBase
-}
-
-func (solver *GradientDescentSolver) Solve(problem *Problem, p Point) (float64, Point) {
-	line_search := solver.Line
-	problem.Project(p)
-	cost := problem.Value(p)
-	pre_dg := 0.0
-	alpha := 0.0
-	max_iter := solver.MaxIter
-	for iter := 0; iter < max_iter; iter++ {
-		g := problem.Gradient(p)
-		g = problem.GradientProject(p, g)
-		// log.Printf("iter=%v g=%v", iter, g.String())
-		d := g.Scale(-1)
-		d = problem.DirectionProject(p, d)
-		dg := d.InnerProd(g)
-		// log.Printf("iter=%v cost=%v dg=%v", iter, cost, dg)
-		if dg >= 0 {
-			break
-		}
-		problem.LineUpdate(p, d)
-		if iter > 0 {
-			alpha *= pre_dg / dg
-		}
-		pre_dg = dg
-		alpha = line_search(problem, alpha)
-		pn := Sum(p, d.Scale(alpha))
-		pn = problem.Project(pn)
-		nc := problem.LineValue(alpha)
-		result := solver.Check(nc, cost)
-		if result == BreakRollback || result == Rollback {
-			break
-		}
-		cost = nc
-		p = pn
-		if result < BreakMax {
-			break
-		}
+	if v, ok := kwds["LogFunc"]; ok {
+		solver.LogFunc = v.(func(int, string))
 	}
-	return cost, p
-}
-
-func ConjugateGradientBetaPRP(alpha float64, direction, previous_gradient, point, gradient Point) float64 {
-	// <g, g - pg> / <pg, pg>
-	den := previous_gradient.SquareSum()
-	num := gradient.SquareSum() - gradient.InnerProd(previous_gradient)
-	if den > 0 && num > 0 {
-		return num / den
+	if v, ok := kwds["LogIterationStatsFunc"]; ok {
+		solver.LogIterationStatsFunc = v.(func(SolverIterationStats))
 	}
-	return 0.0
-}
-
-func ConjugateGradientBetaFR(alpha float64, direction, previous_gradient, point, gradient Point) float64 {
-	// <g, g> / <pg, pg>
-	num := gradient.SquareSum()
-	den := previous_gradient.SquareSum()
-	if den > 0 {
-		return num / den
-	}
-	return 0
-}
-
-func ConjugateGradientBetaHS(alpha float64, direction, previous_gradient, point, gradient Point) float64 {
-	// <g, g - pg> / <d, g - pg>
-	num := gradient.SquareSum() - gradient.InnerProd(previous_gradient)
-	den := direction.InnerProd(gradient) - direction.InnerProd(previous_gradient)
-	if den != 0 {
-		return num / den
-	}
-	return 0
-}
-
-func ConjugateGradientBetaDY(alpha float64, direction, previous_gradient, point, gradient Point) float64 {
-	// <g, g> / <g - pg, d>
-	num := gradient.SquareSum()
-	den := gradient.InnerProd(direction) - previous_gradient.InnerProd(direction)
-	if den != 0 {
-		return num / den
-	}
-	return 0
-}
-
-func ConjugateGradientBetaDescent(alpha float64, direction, previous_gradient, point, gradient Point) float64 {
-	// y = g - pg
-	const eta2 = 1.e-4
-	gg := gradient.SquareSum()
-	gp := gradient.InnerProd(previous_gradient)
-	gd := gradient.InnerProd(direction)
-	pp := previous_gradient.SquareSum()
-	pd := previous_gradient.InnerProd(direction)
-	dd := direction.SquareSum()
-	yy := gg + pp - 2*gp
-	dy := gd - pd
-	dg := gd
-	gy := gg - gp
-	b := (gy - 2*yy/dy*dg) / dy
-	t := -1. / math.Sqrt(dd*min(eta2, pp))
-	return max(t, b)
-}
-
-type ConjugateGradientSolver struct {
-	SolverBase
-	Beta func(float64, Point, Point, Point, Point) float64
-}
-
-func (solver *ConjugateGradientSolver) Init(kwds map[string]interface{}) {
-	solver.SolverBase.Init(kwds)
-	if v, ok := kwds["Beta"]; ok {
-		solver.Beta = v.(func(float64, Point, Point, Point, Point) float64)
-	} else {
-		solver.Beta = ConjugateGradientBetaPRP
-	}
-}
-
-func (solver *ConjugateGradientSolver) Solve(problem *Problem, p Point) (float64, Point) {
-	line_search := solver.Line
-	beta := solver.Beta
-	cost := problem.Value(p)
-	g := problem.GradientProject(p, problem.Gradient(p))
-	d := g.Scale(-1)
-	d = problem.DirectionProject(p, d)
-	pre_dg := 0.0
-	alpha := 0.0
-	max_iter := solver.MaxIter
-	pg := Point{}
-	for iter := 0; iter < max_iter; iter++ {
-		dg := d.InnerProd(g)
-		// log.Printf("iter=%v cost=%v dg=%v", iter, cost, dg)
-		if dg >= 0 {
-			d = g.Scale(-1)
-			d = problem.DirectionProject(p, d)
-			dg = d.InnerProd(g)
-		}
-		if dg >= 0 {
-			break
-		}
-		problem.LineUpdate(p, d)
-		if iter > 0 {
-			alpha = pre_dg / dg
-		}
-		pre_dg = dg
-		alpha = line_search(problem, alpha)
-		pn := Sum(p, d.Scale(alpha))
-		problem.Project(pn)
-		nc := problem.LineValue(alpha)
-		result := solver.Check(nc, cost)
-		if result == BreakRollback {
-			break
-		}
-		if result == Forward || result == BreakKeep {
-			cost = nc
-			p = pn
-		}
-		if iter+1 >= max_iter || result < BreakMax {
-			break
-		}
-		if result == Forward {
-			pg = g
-			g = problem.GradientProject(p, problem.Gradient(p))
-			// Note: line search is not exact, so disable powell's
-			// restart criteria.
-			if false && abs(g.InnerProd(pg)) >= .2*g.SquareSum() {
-				d = g.Scale(-1)
-			} else {
-				b := beta(alpha, d, pg, p, g)
-				d = Sum(d.Scale(b), g.Scale(-1))
-			}
-		} else {
-			// restart
-			g = pg
-			d = g.Scale(-1)
-		}
-	}
-	return cost, p
-}
-
-type LmBFGSSolver struct {
-	SolverBase
-	Recent int
-}
-
-func (solver *LmBFGSSolver) Init(kwds map[string]interface{}) {
-	solver.SolverBase.Init(kwds)
-	if v, ok := kwds["Recent"]; ok {
-		solver.Recent = v.(int)
-	} else {
-		solver.Recent = 5
-	}
-}
-
-func (solver *LmBFGSSolver) Solve(problem *Problem, p Point) (float64, Point) {
-	line_search := solver.Line
-	recent := solver.Recent
-	max_iter := solver.MaxIter
-	alpha := 0.0
-	p = problem.Project(p)
-	c := problem.Value(p)
-	pre_c := c
-	pre_is_rollback := false
-	recent_start := 0
-	d := Point{}
-	g := problem.GradientProject(p, problem.Gradient(p))
-	logs_rho := make([]float64, recent)
-	logs_alpha := make([]float64, recent)
-	logs_dg := make([]Point, recent)
-	logs_dx := make([]Point, recent)
-	for iter := 0; iter < max_iter; iter++ {
-		// log.Printf("iter=%v g=%v", iter, g.String())
-		if iter > 0 {
-			k := (iter - 1) % recent
-			v := logs_dg[k].InnerProd(logs_dx[k])
-			if abs(v) > dbl_epsilon {
-				logs_rho[k] = 1. / v
-			} else {
-				logs_rho[k] = 0.
-			}
-		}
-		// calculation direction d
-		if pre_is_rollback || iter <= recent_start {
-			d = g.Scale(-1)
-			// log.Printf("gradient descent direction %s", d.String())
-		} else {
-			q := g
-			km := imax(iter-recent, recent_start)
-			for i := iter - 1; i >= km; i-- {
-				k := i % recent
-				a := logs_rho[k] * q.InnerProd(logs_dx[k])
-				logs_alpha[k] = a
-				q = Sum(q, logs_dg[k].Scale(-a))
-			}
-			num := logs_dx[(iter-1)%recent].InnerProd(logs_dg[(iter-1)%recent])
-			den := logs_dg[(iter-1)%recent].SquareSum()
-			// log.Printf("num=%v den=%v q=%s", num, den, q.String())
-			if den > 0 {
-				d = q.Scale(num / den)
-			} else {
-				d = q
-			}
-			for i := km; i < iter; i++ {
-				k := i % recent
-				b := logs_rho[k] * d.InnerProd(logs_dg[k])
-				d = Sum(d, logs_dx[k].Scale(logs_alpha[k]-b))
-			}
-			d = d.Scale(-1)
-			// log.Printf("bfgs direction %s", d.String())
-		}
-		dg := d.InnerProd(g)
-		if dg >= 0 {
-			// log.Printf("iter=%v recent_start=%v dg=%v restart", iter, recent_start, dg)
-			d = g.Scale(-1)
-			dg = -g.SquareSum()
-			recent_start = iter
-		}
-		// log.Printf("iter=%v cost=%v dg=%v recent_start=%v", iter, c, dg, recent_start)
-		if dg >= 0 {
-			break
-		}
-		d = problem.DirectionProject(p, d)
-		problem.LineUpdate(p, d)
-		if iter > 0 {
-			a2 := 2 * (c - pre_c) / dg
-			alpha = min(1.0, 1.01*a2)
-			if alpha <= 0 {
-				alpha = 1.0
-			}
-		}
-		pre_c = c
-		alpha = line_search(problem, alpha)
-		// log.Printf("line search got %v\n", alpha)
-		nc := problem.LineValue(alpha)
-		result := solver.Check(nc, c)
-		if result == BreakRollback {
-			break
-		}
-		pp := p
-		if result == BreakKeep || result == Forward {
-			c = nc
-			p = Sum(p, d.Scale(alpha))
-			p = problem.Project(p)
-		}
-		if result < BreakMax {
-			break
-		}
-		if iter+1 >= max_iter {
-			break
-		}
-		if result == Forward {
-			k := iter % recent
-			logs_dx[k] = Sum(p, pp.Scale(-1))
-			pg := g
-			g = problem.GradientProject(p, problem.Gradient(p))
-			logs_dg[k] = Sum(g, pg.Scale(-1))
-		} else {
-			if iter == recent_start {
-				break
-			}
-			recent_start = iter + 1
-		}
-		pre_is_rollback = (result == Rollback)
-	}
-	return c, p
 }
