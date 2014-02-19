@@ -1,6 +1,10 @@
 package optimization
 
-import "fmt"
+import (
+	"container/heap"
+	"fmt"
+	"log"
+)
 
 type FeatureValue struct {
 	Feature int
@@ -207,14 +211,13 @@ func (a Point) SquareSum() float64 {
 	return m * a.Factor * a.Factor
 }
 
-func remove_if(ds []Point, pred func(Point) bool) int {
-	n := len(ds)
+func remove_if(vs []Point, n int, pred func(Point) bool) int {
 	f := 0
 	t := 0
 	for f+t < n {
-		if pred(ds[f]) {
+		if pred(vs[f]) {
 			t++
-			ds[n-t], ds[f] = ds[n-t], ds[f]
+			vs[n-t], vs[f] = vs[n-t], vs[f]
 		} else {
 			f++
 		}
@@ -222,45 +225,236 @@ func remove_if(ds []Point, pred func(Point) bool) int {
 	return f
 }
 
-func plusImpl(dest *Point, vs []Point) {
+func plusDense(dest *Point, vs []Point) {
 	if len(vs) == 0 {
+		return
+	}
+	for i := 0; i < len(vs); i++ {
+		if vs[i].Size() != vs[0].Size() {
+			log.Fatalf("Size(%v and %v) uncompatible to sum", vs[0].Size(), vs[1].Size())
+		}
+		if !vs[i].IsDense() {
+			log.Fatalf("expect all dense")
+		}
+	}
+	if dest.IsDense() && vs[0].Size() != dest.Size() {
+		log.Fatalf("Size(%v and %v) uncompatible to sum", vs[0].Size(), dest.Size())
+	}
+	if dest.Size() == 0 {
+		dest.Factor = 0.0
+	}
+	is_alloc := false
+	c := 0
+	if dest.Factor == 0.0 {
+		*dest = vs[0]
+		is_alloc = false
+		c = 1
+	}
+	size := vs[0].Size()
+	if len(vs) > c && is_alloc == false {
+		t := Point{Factor: 1, Dense: make([]float64, size)}
+		if dest.Dense != nil {
+			for x, v := range dest.Dense {
+				t.Dense[x] = v * dest.Factor
+			}
+		} else if dest.Sparse != nil {
+			for _, fv := range dest.Sparse {
+				x := fv.Feature
+				v := fv.Value * dest.Factor
+				if x >= size {
+					log.Fatalf("sparse index(%v) is larger than dense size(%v)", x, size)
+				}
+				t.Dense[x] += v
+			}
+		}
+		*dest = t
+		is_alloc = true
+	}
+	for ; c < len(vs); c++ {
+		if dest.Factor != 1 {
+			for x, v := range dest.Dense {
+				dest.Dense[x] = v * dest.Factor
+			}
+			dest.Factor = 1
+		}
+		for x, v := range vs[c].Dense {
+			dest.Dense[x] += vs[c].Factor * v
+		}
+	}
+	return
+}
+
+type point_index_col struct {
+	p Point
+	i int
+	c int
+}
+
+type point_index_col_heap struct {
+	vs []point_index_col
+	n  int
+}
+
+func (a *point_index_col_heap) Len() int {
+	return a.n
+}
+
+func (a *point_index_col_heap) Less(i, j int) bool {
+	return a.vs[i].c < a.vs[j].c
+}
+
+func (a *point_index_col_heap) Swap(i, j int) {
+	a.vs[i], a.vs[j] = a.vs[j], a.vs[i]
+}
+
+func (a *point_index_col_heap) Push(x interface{}) {
+	if len(a.vs) <= a.n+1 {
+		log.Fatalf("overflow")
+	}
+	a.vs[a.n] = x.(point_index_col)
+	a.n++
+}
+
+func (a *point_index_col_heap) Pop() interface{} {
+	if a.n == 0 {
+		log.Fatalf("underflow")
+	}
+	a.n--
+	return a.vs[a.n]
+}
+
+func plusSparse(dest *Point, vs []Point) {
+	if len(vs) == 0 {
+		return
+	}
+	for i := 0; i < len(vs); i++ {
+		if vs[i].Size() == 0 {
+			log.Fatalf("plus Point with zero Size(%v)", vs[i].Size())
+		}
+		if vs[i].IsDense() {
+			log.Fatalf("expect all sparse %v/%v", i, len(vs))
+		}
+	}
+	if dest.Size() == 0 {
+		dest.Factor = 0.0
+	}
+	c := 0
+	if dest.Factor == 0.0 {
+		*dest = vs[0]
+	}
+	if len(vs) == c {
+		return
+	}
+	if dest.IsDense() {
+		// TODO: I have to copy the whole dense to another place ...
+		d := make([]float64, dest.Size())
+		for x, v := range dest.Dense {
+			d[x] = v * dest.Factor
+		}
+		*dest = Point{Factor: 1, Dense: d}
+		for i := 0; i < len(vs); i++ {
+			for _, fv := range vs[i].Sparse {
+				v := fv.Value * vs[i].Factor
+				x := fv.Feature
+				if x >= len(dest.Dense) {
+					log.Fatal("dense(%v) += sparse with overflow(%v)",
+						len(dest.Dense), x)
+				}
+				dest.Dense[x] += v / dest.Factor
+			}
+		}
+		return
+	}
+	d := 0
+	if dest.Factor != 0.0 {
+		d = 1
+	}
+	cans := &point_index_col_heap{
+		n:  0,
+		vs: make([]point_index_col, len(vs)-c+d),
+	}
+	nz := 0
+	last_c := -1
+	for i := c; i < len(vs); i++ {
+		pic := point_index_col{p: vs[i], i: 0, c: vs[i].Sparse[0].Feature}
+		heap.Push(cans, pic)
+	}
+	if d == 1 {
+		pic := point_index_col{p: *dest, i: 0, c: dest.Sparse[0].Feature}
+		heap.Push(cans, pic)
+	}
+	for cans.Len() > 0 {
+		pic := &cans.vs[0]
+		if last_c != pic.c && pic.p.Sparse[pic.i].Value != 0.0 {
+			nz++
+			last_c = pic.c
+		}
+		if pic.i+1 < pic.p.Size() {
+			pic.i++
+			pic.c = pic.p.Sparse[pic.i].Feature
+			heap.Fix(cans, 0)
+		} else {
+			heap.Remove(cans, 0)
+		}
+	}
+	for i := c; i < len(vs); i++ {
+		pic := point_index_col{p: vs[i], i: 0, c: vs[i].Sparse[0].Feature}
+		heap.Push(cans, pic)
+	}
+	if d == 1 {
+		pic := point_index_col{p: *dest, i: 0, c: dest.Sparse[0].Feature}
+		heap.Push(cans, pic)
+	}
+	s := make([]FeatureValue, nz)
+	last_c = -1
+	index := -1
+	for cans.Len() > 0 {
+		pic := &cans.vs[0]
+		v := pic.p.Sparse[pic.i].Value * pic.p.Factor
+		if last_c != pic.c && v != 0.0 {
+			index++
+			last_c = c
+			s[index].Feature = c
+		}
+		s[index].Value += v
+		pic.i++
+		if pic.i < pic.p.Size() {
+			pic.c = pic.p.Sparse[pic.i].Feature
+			heap.Fix(cans, 0)
+		} else {
+			heap.Remove(cans, 0)
+		}
+	}
+	*dest = Point{Factor: 0, Sparse: s[:index+1]}
+	return
+}
+
+func plusImpl(dest *Point, vs []Point) {
+	n := len(vs)
+	n = remove_if(vs, n,
+		func(a Point) bool {
+			if a.Factor == 0 || a.Size() == 0 {
+				return true
+			}
+			if a.Dense != nil && dest.Dense != nil && &a.Dense[0] == &dest.Dense[0] {
+				dest.Factor += a.Factor
+				return true
+			}
+			if a.Sparse != nil && dest.Sparse != nil && &a.Sparse[0] == &dest.Sparse[0] {
+				dest.Factor += a.Factor
+				return true
+			}
+			return false
+		})
+	if n == 0 {
 		return
 	}
 	if dest.Size() == 0 {
 		dest.Factor = 0.0
 	}
-	// TODO: I stop here ...
-	ds := vs
-	is_alloc := false
-	if len(ds) > 0 {
-		c := 0
-		if dest.Factor == 0.0 {
-			*dest = ds[0]
-			is_alloc = false
-			c = 1
-		}
-		if len(ds) > c && is_alloc == false {
-			t := Point{Factor: 1, Dense: make([]float64, len(ds[0].Dense))}
-			if dest.Dense != nil {
-				for x, v := range dest.Dense {
-					t.Dense[x] = v * dest.Factor
-				}
-			}
-			*dest = t
-			is_alloc = true
-		}
-		for ; c < len(ds); c++ {
-			if dest.Factor != 1 {
-				for x, v := range dest.Dense {
-					dest.Dense[x] = v * dest.Factor
-				}
-				dest.Factor = 1
-			}
-			for x, v := range ds[c].Dense {
-				dest.Dense[x] += ds[c].Factor * v
-			}
-		}
-	}
+	nd := remove_if(vs, n, func(a Point) bool { return !a.IsDense() })
+	plusDense(dest, vs[0:nd])
+	plusSparse(dest, vs[nd:n])
 	return
 }
 

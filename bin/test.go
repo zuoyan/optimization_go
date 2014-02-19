@@ -20,7 +20,7 @@ type LbfgsbSolver struct {
 }
 
 func (solver *LbfgsbSolver) Solve(problem *optimization.Problem, x optimization.Point) (optimization.Point, float64) {
-	optimizer := new(lbfgsb.Lbfgsb).SetFTolerance(2e-4).SetGTolerance(1e-10)
+	optimizer := new(lbfgsb.Lbfgsb).SetFTolerance(1e-10).SetGTolerance(1e-10)
 	point := make([]float64, len(x.Dense))
 	for i, v := range x.Dense {
 		point[i] = v * x.Factor
@@ -134,19 +134,22 @@ func main() {
 	A := make([]float64, *row**col)
 	x := make([]float64, *col)
 	for i := 0; i < len(A); i++ {
-		A[i] = rand.Float64()
+		A[i] = rand.Float64() * 10
 	}
 	for i := 0; i < len(x); i++ {
-		x[i] = rand.Float64()
+		x[i] = rand.Float64() * 10
 	}
 	b := mv(A, x)
-	log.Printf("perfect solution at %v\n", x)
+	log.Printf("perfect solution at %v", x)
+	log.Printf("perfect value %v", opt_func(A, b, optimization.DensePoint(x)))
+	log.Printf("perfect gradient %v", opt_grad(A, b, optimization.DensePoint(x)).String())
+
 	pd := make([]float64, *col)
 	for i := 0; i < *col; i++ {
 		pd[i] = rand.Float64()
 	}
 	p := optimization.DensePoint(pd)
-	log.Printf("init solution at %v\n", pd)
+	log.Printf("init solution at %v", pd)
 	test_solver(A, b, p, "lm_bfgs", &optimization.LmBFGSSolver{})
 	test_solver(A, b, p, "gradient", &optimization.GradientDescentSolver{})
 	test_solver(A, b, p, "conjugate", &optimization.ConjugateGradientSolver{})

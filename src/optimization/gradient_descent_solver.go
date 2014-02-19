@@ -16,10 +16,10 @@ func (solver *GradientDescentSolver) Solve(problem *Problem, x Point) (Point, fl
 	g := problem.GradientProject(x, problem.Gradient(x))
 	for iter := 0; iter < max_iter; iter++ {
 		numf, numg := problem.NumValue, problem.NumGradient
-		solver.Logf(1000, "start iter=%v", iter)
+		solver.Logf(2000, "iter=%v start ...", iter)
 		d := problem.DirectionProject(x, g.Scale(-1))
 		dg := d.InnerProd(g)
-		solver.Logf(1000, "y=%v dg=%v", y, dg)
+		solver.Logf(2000, "y=%v dg=%v", y, dg)
 		solver.LogResult(10000, func() string { return fmt.Sprintf("x=%s g=%s d=%s", x.String(), g.String(), d.String()) })
 		if dg >= 0 {
 			break
@@ -31,7 +31,7 @@ func (solver *GradientDescentSolver) Solve(problem *Problem, x Point) (Point, fl
 		pre_dg = dg
 		alpha_init := alpha
 		alpha = line_search(problem, alpha_init)
-		solver.Logf(5000, "line search from %v got %v", alpha, alpha_init)
+		solver.Logf(2000, "line search from %v got %v", alpha, alpha_init)
 		xn := Sum(x, d.Scale(alpha))
 		xn = problem.Project(xn)
 		gn := problem.GradientProject(xn, problem.Gradient(xn))

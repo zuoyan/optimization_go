@@ -33,7 +33,7 @@ func (solver *LmBFGSSolver) Solve(problem *Problem, x Point) (Point, float64) {
 	logs_dg := make([]Point, recent)
 	logs_dx := make([]Point, recent)
 	for iter := 0; iter < max_iter; iter++ {
-		solver.Logf(1000, "iter=%v start ...", iter)
+		solver.Logf(2000, "iter=%v start ...", iter)
 		numf, numg := problem.NumValue, problem.NumGradient
 		if iter > 0 {
 			k := (iter - 1) % recent
@@ -46,10 +46,10 @@ func (solver *LmBFGSSolver) Solve(problem *Problem, x Point) (Point, float64) {
 		}
 		// calculation direction d
 		if pre_is_rollback || iter <= recent_start {
-			solver.Logf(1000, "direction from gradient descent")
+			solver.Logf(2000, "direction from gradient descent")
 			d = g.Scale(-1)
 		} else {
-			solver.Logf(1000, "direction from bfgs")
+			solver.Logf(2000, "direction from bfgs")
 			q := g
 			km := imax(iter-recent, recent_start)
 			for i := iter - 1; i >= km; i-- {
@@ -74,12 +74,12 @@ func (solver *LmBFGSSolver) Solve(problem *Problem, x Point) (Point, float64) {
 		}
 		dg := d.InnerProd(g)
 		if dg >= 0 {
-			solver.Logf(1000, "dg=%v > 0, reset to -g", dg)
+			solver.Logf(2000, "dg=%v > 0, reset to -g", dg)
 			d = problem.DirectionProject(x, g.Scale(-1))
 			dg = d.InnerProd(g)
 			recent_start = iter
 		}
-		solver.Logf(1000, "y=%v dg=%v", y, dg)
+		solver.Logf(2000, "y=%v dg=%v", y, dg)
 		solver.LogResult(10000, func() string { return fmt.Sprintf("x=%s g=%s d=%s", x.String(), g.String(), d.String()) })
 		if dg >= 0 {
 			break
@@ -88,7 +88,7 @@ func (solver *LmBFGSSolver) Solve(problem *Problem, x Point) (Point, float64) {
 		// TODO: how about cauchy point here?
 		if iter > 0 {
 			a2 := 2 * (y - yp) / dg
-			solver.Logf(1000, "a2=%v", a2)
+			solver.Logf(3000, "a2=%v", a2)
 			alpha = min(1.0, 1.01*a2)
 		}
 		if alpha <= 0.0 {
@@ -97,7 +97,7 @@ func (solver *LmBFGSSolver) Solve(problem *Problem, x Point) (Point, float64) {
 		yp = y
 		alpha_init := alpha
 		alpha = line_search(problem, alpha_init)
-		solver.Logf(1000, "line search from %v got %v", alpha_init, alpha)
+		solver.Logf(2000, "line search from %v got %v", alpha_init, alpha)
 		xn := problem.Project(Sum(x, d.Scale(alpha)))
 		yn := problem.LineValue(alpha)
 		gn := problem.GradientProject(xn, problem.Gradient(xn))

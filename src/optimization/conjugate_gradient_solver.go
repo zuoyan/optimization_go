@@ -89,15 +89,15 @@ func (solver *ConjugateGradientSolver) Solve(problem *Problem, x Point) (Point, 
 	max_iter := solver.MaxIter
 	for iter := 0; iter < max_iter; iter++ {
 		numf, numg := problem.NumValue, problem.NumGradient
-		solver.Logf(1000, "iter=%v start ...", iter)
+		solver.Logf(2000, "iter=%v start ...", iter)
 		dg := d.InnerProd(g)
 		if dg >= 0 {
-			solver.Logf(1000, "dg=%v > 0, set d = -g", dg)
+			solver.Logf(2000, "dg=%v > 0, set d = -g", dg)
 			d = g.Scale(-1)
 			d = problem.DirectionProject(x, d)
 			dg = d.InnerProd(g)
 		}
-		solver.Logf(1000, "y=%v dg=%v", y, dg)
+		solver.Logf(2000, "y=%v dg=%v", y, dg)
 		solver.LogResult(10000, func() string { return fmt.Sprintf("x=%s g=%s d=%s", x.String(), g.String(), d.String()) })
 		if dg >= 0 {
 			break
@@ -109,7 +109,7 @@ func (solver *ConjugateGradientSolver) Solve(problem *Problem, x Point) (Point, 
 		pre_dg = dg
 		alpha_init := alpha
 		alpha = line_search(problem, alpha_init)
-		solver.Logf(1000, "line search from %v got %v", alpha_init, alpha)
+		solver.Logf(2000, "line search from %v got %v", alpha_init, alpha)
 		xn := Sum(x, d.Scale(alpha))
 		xn = problem.Project(xn)
 		yn := problem.LineValue(alpha)
