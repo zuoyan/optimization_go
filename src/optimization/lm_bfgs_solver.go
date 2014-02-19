@@ -83,12 +83,14 @@ func (solver *LmBFGSSolver) Solve(problem *Problem, x Point) (Point, float64) {
 			break
 		}
 		problem.LineUpdate(x, d)
+		// TODO: how about cauchy point here?
 		if iter > 0 {
 			a2 := 2 * (y - yp) / dg
+			solver.Logf(1000, "a2=%v", a2)
 			alpha = min(1.0, 1.01*a2)
-			if alpha <= 0 {
-				alpha = 1.0
-			}
+		}
+		if alpha <= 0.0 {
+			alpha = 1.0
 		}
 		yp = y
 		alpha_init := alpha
