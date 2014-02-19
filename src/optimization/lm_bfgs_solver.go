@@ -1,5 +1,7 @@
 package optimization
 
+import "fmt"
+
 type LmBFGSSolver struct {
 	SolverBase
 	Recent int
@@ -78,7 +80,7 @@ func (solver *LmBFGSSolver) Solve(problem *Problem, x Point) (Point, float64) {
 			recent_start = iter
 		}
 		solver.Logf(1000, "y=%v dg=%v", y, dg)
-		solver.Logf(10000, "x=%s g=%s d=%s", x.String(), g.String(), d.String())
+		solver.LogResult(10000, func() string { return fmt.Sprintf("x=%s g=%s d=%s", x.String(), g.String(), d.String()) })
 		if dg >= 0 {
 			break
 		}

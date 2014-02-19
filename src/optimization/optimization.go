@@ -528,12 +528,14 @@ type Solver interface {
 	Init(map[string]interface{})
 	Log(int, string)
 	Logf(int, string, ...interface{})
+	LogResult(int, func() string)
 	LogIterationStats(SolverIterationStats)
 }
 
 type SolverBase struct {
 	CheckFunc             func(*Problem, SolverIterationStats, Point, float64) int
 	MaxIter               int
+	MaxLogLevel           int
 	Line                  func(*Problem, float64) float64
 	LogFunc               func(int, string)
 	LogIterationStatsFunc func(SolverIterationStats)
@@ -554,33 +556,50 @@ func (solver *SolverBase) Check(problem *Problem, stats SolverIterationStats, xp
 }
 
 func (solver *SolverBase) Log(level int, message string) {
-	if solver.LogFunc != nil {
-		solver.LogFunc(level, message)
+	if level <= solver.MaxLogLevel {
+		if solver.LogFunc != nil {
+			solver.LogFunc(level, message)
+		}
 	}
 	return
 }
 
+func (solver *SolverBase) LogResult(level int, f func() string) {
+	if level <= solver.MaxLogLevel {
+		solver.Log(level, f())
+	}
+}
+
 func (solver *SolverBase) Logf(level int, format string, vs ...interface{}) {
-	solver.Log(level, fmt.Sprintf(format, vs...))
+	solver.LogResult(level, func() string {
+		return fmt.Sprintf(format, vs...)
+	})
 }
 
 func (solver *SolverBase) LogIterationStats(stats SolverIterationStats) {
 	if solver.LogIterationStatsFunc != nil {
 		solver.LogIterationStatsFunc(stats)
 	} else {
-		solver.Logf(100, "iter=%v y=%v #f=%v/%v #g=%v/%v result=%s",
-			stats.Iteration, stats.Y, stats.NumFunction, stats.NumFunctionAll, stats.NumGradient, stats.NumGradientAll,
-			CheckResultString(stats.CheckResult))
+		solver.LogResult(100,
+			func() string {
+				return fmt.Sprintf("iter=%v y=%v #f=%v/%v #g=%v/%v result=%s",
+					stats.Iteration, stats.Y, stats.NumFunction, stats.NumFunctionAll, stats.NumGradient, stats.NumGradientAll,
+					CheckResultString(stats.CheckResult))
+			})
 	}
 	return
 }
 
 func (solver *SolverBase) Init(kwds map[string]interface{}) {
-	solver.MaxIter = 0
 	if v, ok := kwds["MaxIter"]; ok {
 		solver.MaxIter = v.(int)
 	} else {
 		solver.MaxIter = 30
+	}
+	if v, ok := kwds["MaxLogLevel"]; ok {
+		solver.MaxLogLevel = v.(int)
+	} else {
+		solver.MaxLogLevel = 1000
 	}
 	if v, ok := kwds["LineSearch"]; ok {
 		solver.Line = v.(func(*Problem, float64) float64)

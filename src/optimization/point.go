@@ -14,10 +14,28 @@ type Point struct {
 }
 
 func DensePoint(a []float64) Point {
-	return Point{Factor: 1.0, Dense: a}
+	d := make([]float64, len(a))
+	for x, v := range a {
+		d[x] = v
+	}
+	return Point{Factor: 1.0, Dense: d}
 }
 
-func (a *Point) Size() int {
+func (a Point) ToDense() []float64 {
+	d := make([]float64, a.Size())
+	if a.IsDense() {
+		for x, v := range a.Dense {
+			d[x] = v * a.Factor
+		}
+	} else {
+		for i, fv := range a.Sparse {
+			d[i] = fv.Value * a.Factor
+		}
+	}
+	return d
+}
+
+func (a Point) Size() int {
 	if a.Dense != nil {
 		return len(a.Dense)
 	}
@@ -27,11 +45,11 @@ func (a *Point) Size() int {
 	return 0
 }
 
-func (a *Point) IsDense() bool {
+func (a Point) IsDense() bool {
 	return a.Dense != nil
 }
 
-func (a *Point) Equal(b Point) bool {
+func (a Point) Equal(b Point) bool {
 	as := a.Size()
 	bs := b.Size()
 	if a.IsDense() && b.IsDense() {
@@ -85,7 +103,7 @@ func (a *Point) Equal(b Point) bool {
 
 	}
 	if b.IsDense() {
-		return b.Equal(*a)
+		return b.Equal(a)
 	}
 	ai, bi := 0, 0
 	for ai < as && bi < bs {
@@ -119,7 +137,7 @@ func (a *Point) Equal(b Point) bool {
 	return true
 }
 
-func (a *Point) String() string {
+func (a Point) String() string {
 	s := a.Size()
 	if a.IsDense() {
 		ret := "["
@@ -144,13 +162,12 @@ func (a *Point) String() string {
 	return ret + "}"
 }
 
-func (a *Point) Scale(x float64) Point {
-	b := *a
-	b.Factor *= x
-	return b
+func (a Point) Scale(x float64) Point {
+	a.Factor *= x
+	return a
 }
 
-func (a *Point) AbsMax() float64 {
+func (a Point) AbsMax() float64 {
 	if a.Factor == 0 || a.Size() == 0 {
 		return 0
 	}
@@ -172,7 +189,7 @@ func (a *Point) AbsMax() float64 {
 	return m * abs(a.Factor)
 }
 
-func (a *Point) SquareSum() float64 {
+func (a Point) SquareSum() float64 {
 	if a.Factor == 0 || a.Size() == 0 {
 		return 0
 	}

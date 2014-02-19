@@ -1,6 +1,9 @@
 package optimization
 
-import "math"
+import (
+	"fmt"
+	"math"
+)
 
 func ConjugateGradientBetaPRP(alpha float64, direction, previous_gradient, point, gradient Point) float64 {
 	// <g, g - pg> / <pg, pg>
@@ -95,7 +98,7 @@ func (solver *ConjugateGradientSolver) Solve(problem *Problem, x Point) (Point, 
 			dg = d.InnerProd(g)
 		}
 		solver.Logf(1000, "y=%v dg=%v", y, dg)
-		solver.Logf(10000, "x=%s g=%s d=%s", x.String(), g.String(), d.String())
+		solver.LogResult(10000, func() string { return fmt.Sprintf("x=%s g=%s d=%s", x.String(), g.String(), d.String()) })
 		if dg >= 0 {
 			break
 		}

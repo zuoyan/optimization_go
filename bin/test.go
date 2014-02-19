@@ -5,15 +5,52 @@ import (
 	"log"
 	"math/rand"
 	"optimization"
+
+	lbfgsb "github.com/afbarnard/go-lbfgsb"
 )
 
 var (
-	cf       = 0
-	cg       = 0
 	row      = flag.Int("row", 4, "row of matrix")
 	col      = flag.Int("col", 4, "col of matrix")
 	max_iter = flag.Int("max_iter", 30, "max iteration")
 )
+
+type LbfgsbSolver struct {
+	optimization.SolverBase
+}
+
+func (solver *LbfgsbSolver) Solve(problem *optimization.Problem, x optimization.Point) (optimization.Point, float64) {
+	optimizer := new(lbfgsb.Lbfgsb).SetFTolerance(2e-4).SetGTolerance(1e-10)
+	point := make([]float64, len(x.Dense))
+	for i, v := range x.Dense {
+		point[i] = v * x.Factor
+	}
+	optimizer.SetLogger(func(info *lbfgsb.OptimizationIterationInformation) {
+		if (info.Iteration-1)%10 == 0 {
+			solver.Log(1000, info.Header())
+		}
+		solver.Log(1000, info.String())
+	})
+	objective := lbfgsb.GeneralObjectiveFunction{
+		Function: func(p []float64) float64 {
+			y := problem.Value(optimization.DensePoint(p))
+			return y
+		},
+		Gradient: func(p []float64) []float64 {
+			g := problem.Gradient(optimization.DensePoint(p))
+			return g.ToDense()
+		},
+	}
+	xfg, status := optimizer.Minimize(objective, point)
+	stats := optimizer.OptimizationStatistics()
+	log.Printf("stats: iters: %v; F evals: %v; G evals: %v", stats.Iterations, stats.FunctionEvaluations, stats.GradientEvaluations)
+	log.Printf("status: %v", status)
+	x = optimization.DensePoint(xfg.X)
+	if xfg.F != problem.Value(x) {
+		log.Printf("error of value, %v != %v", xfg.F, problem.Value(x))
+	}
+	return x, xfg.F
+}
 
 func square(x float64) float64 {
 	return x * x
@@ -53,7 +90,6 @@ func opt_func(A []float64, b []float64, v optimization.Point) float64 {
 	if len(A) != *row**col || len(b) != *row {
 		log.Fatalf("invalid size row=%v col=%v len(A)=%v len(b)=%v", row, col, len(A), len(b))
 	}
-	cf += 1
 	r := mv(A, v.Dense)
 	s := 0.0
 	for i := 0; i < len(r); i++ {
@@ -61,12 +97,11 @@ func opt_func(A []float64, b []float64, v optimization.Point) float64 {
 		r[i] -= b[i]
 		s += square(r[i])
 	}
-	log.Printf("caled func(%s) = %f\n", v.String(), s)
+	// log.Printf("caled func(%s) = %f\n", v.String(), s)
 	return s
 }
 
 func opt_grad(A []float64, b []float64, v optimization.Point) optimization.Point {
-	cg += 1
 	r := mv(A, v.Dense)
 	for i := 0; i < len(r); i++ {
 		r[i] *= v.Factor
@@ -74,20 +109,24 @@ func opt_grad(A []float64, b []float64, v optimization.Point) optimization.Point
 	}
 	gd := mtv(A, r)
 	g := optimization.Point{Factor: 2.0, Dense: gd}
-	log.Printf("caled grad(%s) = %s\n", v.String(), g.String())
+	// log.Printf("caled grad(%s) = %s\n", v.String(), g.String())
 	return g
 }
 
 func test_solver(A, b []float64, p optimization.Point, name string, solver optimization.Solver) {
 	log.Printf("solver %s ...\n", name)
-	cf, cg = 0, 0
-	solver.Init(map[string]interface{}{"MaxIter": *max_iter})
+	solver.Init(map[string]interface{}{
+		"MaxIter": *max_iter,
+		"LogFunc": func(level int, message string) {
+			log.Printf(message)
+		},
+	})
 	problem := &optimization.Problem{
 		ValueFunc:    func(p optimization.Point) float64 { return opt_func(A, b, p) },
 		GradientFunc: func(p optimization.Point) optimization.Point { return opt_grad(A, b, p) },
 	}
-	v, m := solver.Solve(problem, p)
-	log.Printf("solver %s min value %v at %v #f=%v #g=%v\n", name, v, m.Dense, cf, cg)
+	m, v := solver.Solve(problem, p)
+	log.Printf("solver %s min value %v #f=%v #g=%v at %v\n", name, v, problem.NumValue, problem.NumGradient, m.Dense)
 }
 
 func main() {
@@ -111,4 +150,5 @@ func main() {
 	test_solver(A, b, p, "lm_bfgs", &optimization.LmBFGSSolver{})
 	test_solver(A, b, p, "gradient", &optimization.GradientDescentSolver{})
 	test_solver(A, b, p, "conjugate", &optimization.ConjugateGradientSolver{})
+	test_solver(A, b, p, "lbfgsb", &LbfgsbSolver{})
 }

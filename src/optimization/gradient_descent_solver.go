@@ -1,5 +1,7 @@
 package optimization
 
+import "fmt"
+
 type GradientDescentSolver struct {
 	SolverBase
 }
@@ -18,7 +20,7 @@ func (solver *GradientDescentSolver) Solve(problem *Problem, x Point) (Point, fl
 		d := problem.DirectionProject(x, g.Scale(-1))
 		dg := d.InnerProd(g)
 		solver.Logf(1000, "y=%v dg=%v", y, dg)
-		solver.Logf(10000, "x=%s g=%s d=%s", x.String(), g.String(), d.String())
+		solver.LogResult(10000, func() string { return fmt.Sprintf("x=%s g=%s d=%s", x.String(), g.String(), d.String()) })
 		if dg >= 0 {
 			break
 		}
