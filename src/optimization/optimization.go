@@ -511,15 +511,15 @@ func StrongWolfeLineSearch(p *Problem, alpha float64) float64 {
 }
 
 type SolverIterationStats struct {
-	Iteration             int
-	NumFunction           int
-	NumGradient           int
-	AccumulateNumFunction int
-	AccumulateNumGradient int
-	X                     Point
-	Y                     float64
-	G                     Point
-	CheckResult           int
+	Iteration      int
+	NumFunction    int
+	NumGradient    int
+	NumFunctionAll int
+	NumGradientAll int
+	X              Point
+	Y              float64
+	G              Point
+	CheckResult    int
 }
 
 type Solver interface {
@@ -569,7 +569,7 @@ func (solver *SolverBase) LogIterationStats(stats SolverIterationStats) {
 		solver.LogIterationStatsFunc(stats)
 	} else {
 		solver.Logf(100, "iter=%v y=%v #f=%v/%v #g=%v/%v result=%s",
-			stats.Iteration, stats.Y, stats.NumFunction, stats.AccumulateNumFunction, stats.NumGradient, stats.AccumulateNumGradient,
+			stats.Iteration, stats.Y, stats.NumFunction, stats.NumFunctionAll, stats.NumGradient, stats.NumGradientAll,
 			CheckResultString(stats.CheckResult))
 	}
 	return

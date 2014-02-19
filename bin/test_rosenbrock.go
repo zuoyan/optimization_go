@@ -36,7 +36,7 @@ func opt_grad(a optimization.Point) optimization.Point {
 func test_solver(p optimization.Point, name string, solver optimization.Solver) {
 	log.Printf("solver %s ...\n", name)
 	solver.Init(map[string]interface{}{
-		"MaxIter": 30,
+		"MaxIter": 48,
 		"LogFunc": func(level int, message string) {
 			log.Print(message)
 		},

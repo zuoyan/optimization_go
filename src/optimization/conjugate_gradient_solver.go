@@ -112,14 +112,14 @@ func (solver *ConjugateGradientSolver) Solve(problem *Problem, x Point) (Point, 
 		yn := problem.LineValue(alpha)
 		gn := problem.GradientProject(xn, problem.Gradient(xn))
 		stats := SolverIterationStats{
-			Iteration:             iter,
-			NumFunction:           problem.NumValue - numf,
-			AccumulateNumFunction: problem.NumValue,
-			NumGradient:           problem.NumGradient - numg,
-			AccumulateNumGradient: problem.NumGradient,
-			X: xn,
-			Y: yn,
-			G: gn,
+			Iteration:      iter,
+			NumFunction:    problem.NumValue - numf,
+			NumFunctionAll: problem.NumValue,
+			NumGradient:    problem.NumGradient - numg,
+			NumGradientAll: problem.NumGradient,
+			X:              xn,
+			Y:              yn,
+			G:              gn,
 		}
 		result := solver.Check(problem, stats, x, y)
 		stats.CheckResult = result

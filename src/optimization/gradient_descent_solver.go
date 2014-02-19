@@ -35,14 +35,14 @@ func (solver *GradientDescentSolver) Solve(problem *Problem, x Point) (Point, fl
 		gn := problem.GradientProject(xn, problem.Gradient(xn))
 		yn := problem.LineValue(alpha)
 		stats := SolverIterationStats{
-			Iteration:             iter,
-			NumFunction:           problem.NumValue - numf,
-			AccumulateNumFunction: problem.NumValue,
-			NumGradient:           problem.NumGradient - numg,
-			AccumulateNumGradient: problem.NumGradient,
-			X: xn,
-			Y: yn,
-			G: gn,
+			Iteration:      iter,
+			NumFunction:    problem.NumValue - numf,
+			NumFunctionAll: problem.NumValue,
+			NumGradient:    problem.NumGradient - numg,
+			NumGradientAll: problem.NumGradient,
+			X:              xn,
+			Y:              yn,
+			G:              gn,
 		}
 		result := solver.Check(problem, stats, x, y)
 		stats.CheckResult = result
