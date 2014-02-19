@@ -217,7 +217,7 @@ func remove_if(vs []Point, n int, pred func(Point) bool) int {
 	for f+t < n {
 		if pred(vs[f]) {
 			t++
-			vs[n-t], vs[f] = vs[n-t], vs[f]
+			vs[n-t], vs[f] = vs[f], vs[n-t]
 		} else {
 			f++
 		}
@@ -308,8 +308,8 @@ func (a *point_index_col_heap) Swap(i, j int) {
 }
 
 func (a *point_index_col_heap) Push(x interface{}) {
-	if len(a.vs) <= a.n+1 {
-		log.Fatalf("overflow")
+	if len(a.vs) <= a.n {
+		log.Fatalf("push overflow n=%v", a.n)
 	}
 	a.vs[a.n] = x.(point_index_col)
 	a.n++
@@ -341,12 +341,13 @@ func plusSparse(dest *Point, vs []Point) {
 	c := 0
 	if dest.Factor == 0.0 {
 		*dest = vs[0]
+		c = 1
 	}
 	if len(vs) == c {
 		return
 	}
 	if dest.IsDense() {
-		// TODO: I have to copy the whole dense to another place ...
+		// TODO: I have to copy the whole dense array ...
 		d := make([]float64, dest.Size())
 		for x, v := range dest.Dense {
 			d[x] = v * dest.Factor
@@ -360,7 +361,7 @@ func plusSparse(dest *Point, vs []Point) {
 					log.Fatal("dense(%v) += sparse with overflow(%v)",
 						len(dest.Dense), x)
 				}
-				dest.Dense[x] += v / dest.Factor
+				dest.Dense[x] += v
 			}
 		}
 		return
@@ -413,8 +414,8 @@ func plusSparse(dest *Point, vs []Point) {
 		v := pic.p.Sparse[pic.i].Value * pic.p.Factor
 		if last_c != pic.c && v != 0.0 {
 			index++
-			last_c = c
-			s[index].Feature = c
+			last_c = pic.c
+			s[index].Feature = pic.c
 		}
 		s[index].Value += v
 		pic.i++
@@ -463,8 +464,8 @@ func Sum(vs ...Point) (ret Point) {
 	return ret
 }
 
-func PlusAssign(d *Point, vs ...Point) {
-	plusImpl(d, vs)
+func (a *Point) PlusAssign(vs ...Point) {
+	plusImpl(a, vs)
 }
 
 func (a *Point) InnerProd(b Point) float64 {
