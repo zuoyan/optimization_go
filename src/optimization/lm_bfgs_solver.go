@@ -97,7 +97,7 @@ func (solver *LmBFGSSolver) Solve(problem *Problem, x Point) (Point, float64) {
 		alpha = line_search(problem, alpha_init)
 		solver.Logf(1000, "line search from %v got %v", alpha_init, alpha)
 		xn := problem.Project(Sum(x, d.Scale(alpha)))
-		yn := problem.Value(xn)
+		yn := problem.LineValue(alpha)
 		gn := problem.GradientProject(xn, problem.Gradient(xn))
 		stats := SolverIterationStats{
 			Iteration:      iter,
