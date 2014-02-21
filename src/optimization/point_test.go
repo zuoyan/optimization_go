@@ -7,16 +7,16 @@ import (
 
 func TestDense(t *testing.T) {
 	v := []float64{1.0, 2.0, 3.0, 4.0}
-	p := DensePoint(v)
+	p := VectorDensePoint(v)
 	v[0] = 3.14
-	if p.Dense[0] != 1.0 {
+	if p.String() != "[1, 2, 3, 4]" {
 		t.Error("DensePoint doesn't copy")
 	}
 	q := p.Scale(2)
 	if p.Factor != 1.0 {
 		t.Error("Scale changed")
 	}
-	if q.Factor*q.Dense[0] != 2.0 {
+	if q.String() != "[2, 4, 6, 8]" {
 		t.Error("Scale error")
 	}
 }
@@ -39,7 +39,7 @@ func make_sparse(vi []int, vf []float64) Point {
 		s[i].Feature = x
 		s[i].Value = f
 	}
-	return Point{Factor: 1, Sparse: s}
+	return Point{Factor: 1, Holder: VectorPointHolder{Sparse: s}}
 }
 
 func TestSparse(t *testing.T) {
@@ -47,13 +47,10 @@ func TestSparse(t *testing.T) {
 	if v.Size() != 2 {
 		t.Error("Sparse size")
 	}
-	if v.IsDense() {
-		t.Error("Sparse return IsDense")
-	}
 }
 
 func TestSquareSum(t *testing.T) {
-	v := DensePoint([]float64{1.0, 2.0, 3.0, 4.0})
+	v := VectorDensePoint([]float64{1.0, 2.0, 3.0, 4.0})
 	if v.SquareSum() != 1.0+4.0+9.0+16.0 {
 		t.Error("Square sum of dense")
 	}
@@ -64,23 +61,36 @@ func TestSquareSum(t *testing.T) {
 }
 
 func TestSumDense(t *testing.T) {
-	a := DensePoint([]float64{1.0, 2.0, 3.0, 4.0})
+	a := VectorDensePoint([]float64{1.0, 2.0, 3.0, 4.0})
 	b := a.Scale(2)
-	c := DensePoint([]float64{100.0, 200.0, 300.0, 400.0})
+	if a.Factor != 1.0 {
+		t.Errorf("scale changed left")
+	}
+	c := VectorDensePoint([]float64{100.0, 200.0, 300.0, 400.0})
+	{
+		d := Sum(a, b)
+		e := "[3, 6, 9, 12]"
+		if d.String() != e {
+			t.Errorf("got %v expect %v", d.String(), e)
+		}
+	}
 	{
 		d := Sum(a.Scale(3), b)
-		if d.String() != "[5, 10, 15, 20]" {
-			t.Errorf("got %v, expect [5, 10, 15, 20]", d.String())
+		e := "[5, 10, 15, 20]"
+		if d.String() != e {
+			t.Errorf("got %v, expect %v", d.String(), e)
 		}
 		d = Sum(a.Scale(3), b.Scale(-2))
-		if d.String() != "[-1, -2, -3, -4]" {
-			t.Errorf("got %v, expect [-1, -2, -3, -4]", d.String())
+		e = "[-1, -2, -3, -4]"
+		if d.String() != e {
+			t.Errorf("got %v, expect %v", d.String(), e)
 		}
 	}
 	{
 		d := Sum(a, b, c)
-		if d.String() != "[103, 206, 309, 412]" {
-			t.Errorf("got %v, expect [103, 206, 309, 412]", d.String())
+		e := "[103, 206, 309, 412]"
+		if d.String() != e {
+			t.Errorf("got %v, expect %v", d.String(), e)
 		}
 	}
 }
@@ -119,9 +129,9 @@ func TestSumDenseSparse(t *testing.T) {
 	sa := make_sparse(vi(1, 2, 3), vf(1, 4, 9))
 	sb := make_sparse(vi(2, 3), vf(40, 90))
 	sc := make_sparse(vi(0, 3), vf(10000, 900))
-	da := DensePoint([]float64{1.0, 2.0, 3.0, 4.0})
-	db := DensePoint([]float64{3.0, 4.0, 2.0, 1.0})
-	dc := DensePoint([]float64{100.0, 200.0, 300.0, 400.0})
+	da := VectorDensePoint([]float64{1.0, 2.0, 3.0, 4.0})
+	db := VectorDensePoint([]float64{3.0, 4.0, 2.0, 1.0})
+	dc := VectorDensePoint([]float64{100.0, 200.0, 300.0, 400.0})
 	{
 		v := Sum(sa, da)
 		log.Printf("sum of sparse + dense %v ...", v.String())

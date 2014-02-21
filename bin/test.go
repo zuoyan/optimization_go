@@ -21,10 +21,7 @@ type LbfgsbSolver struct {
 
 func (solver *LbfgsbSolver) Solve(problem *optimization.Problem, x optimization.Point) (optimization.Point, float64) {
 	optimizer := new(lbfgsb.Lbfgsb).SetFTolerance(1e-10).SetGTolerance(1e-10)
-	point := make([]float64, len(x.Dense))
-	for i, v := range x.Dense {
-		point[i] = v * x.Factor
-	}
+	point := optimization.VectorToDense(x)
 	optimizer.SetLogger(func(info *lbfgsb.OptimizationIterationInformation) {
 		if (info.Iteration-1)%10 == 0 {
 			solver.Log(1000, info.Header())
@@ -33,19 +30,19 @@ func (solver *LbfgsbSolver) Solve(problem *optimization.Problem, x optimization.
 	})
 	objective := lbfgsb.GeneralObjectiveFunction{
 		Function: func(p []float64) float64 {
-			y := problem.Value(optimization.DensePoint(p))
+			y := problem.Value(optimization.VectorDensePoint(p))
 			return y
 		},
 		Gradient: func(p []float64) []float64 {
-			g := problem.Gradient(optimization.DensePoint(p))
-			return g.ToDense()
+			g := problem.Gradient(optimization.VectorDensePoint(p))
+			return optimization.VectorToDense(g)
 		},
 	}
 	xfg, status := optimizer.Minimize(objective, point)
 	stats := optimizer.OptimizationStatistics()
 	log.Printf("stats: iters: %v; F evals: %v; G evals: %v", stats.Iterations, stats.FunctionEvaluations, stats.GradientEvaluations)
 	log.Printf("status: %v", status)
-	x = optimization.DensePoint(xfg.X)
+	x = optimization.VectorDensePoint(xfg.X)
 	if xfg.F != problem.Value(x) {
 		log.Printf("error of value, %v != %v", xfg.F, problem.Value(x))
 	}
@@ -90,7 +87,7 @@ func opt_func(A []float64, b []float64, v optimization.Point) float64 {
 	if len(A) != *row**col || len(b) != *row {
 		log.Fatalf("invalid size row=%v col=%v len(A)=%v len(b)=%v", row, col, len(A), len(b))
 	}
-	r := mv(A, v.Dense)
+	r := mv(A, optimization.VectorToDense(v))
 	s := 0.0
 	for i := 0; i < len(r); i++ {
 		r[i] *= v.Factor
@@ -102,13 +99,13 @@ func opt_func(A []float64, b []float64, v optimization.Point) float64 {
 }
 
 func opt_grad(A []float64, b []float64, v optimization.Point) optimization.Point {
-	r := mv(A, v.Dense)
+	r := mv(A, optimization.VectorToDense(v))
 	for i := 0; i < len(r); i++ {
 		r[i] *= v.Factor
 		r[i] -= b[i]
 	}
 	gd := mtv(A, r)
-	g := optimization.Point{Factor: 2.0, Dense: gd}
+	g := optimization.VectorDensePoint(gd).Scale(2.0)
 	// log.Printf("caled grad(%s) = %s\n", v.String(), g.String())
 	return g
 }
@@ -126,7 +123,7 @@ func test_solver(A, b []float64, p optimization.Point, name string, solver optim
 		GradientFunc: func(p optimization.Point) optimization.Point { return opt_grad(A, b, p) },
 	}
 	m, v := solver.Solve(problem, p)
-	log.Printf("solver %s min value %v #f=%v #g=%v at %v\n", name, v, problem.NumValue, problem.NumGradient, m.Dense)
+	log.Printf("solver %s min value %v #f=%v #g=%v at %v\n", name, v, problem.NumValue, problem.NumGradient, m.String())
 }
 
 func main() {
@@ -141,14 +138,14 @@ func main() {
 	}
 	b := mv(A, x)
 	log.Printf("perfect solution at %v", x)
-	log.Printf("perfect value %v", opt_func(A, b, optimization.DensePoint(x)))
-	log.Printf("perfect gradient %v", opt_grad(A, b, optimization.DensePoint(x)).String())
+	log.Printf("perfect value %v", opt_func(A, b, optimization.VectorDensePoint(x)))
+	log.Printf("perfect gradient %v", opt_grad(A, b, optimization.VectorDensePoint(x)).String())
 
 	pd := make([]float64, *col)
 	for i := 0; i < *col; i++ {
 		pd[i] = rand.Float64()
 	}
-	p := optimization.DensePoint(pd)
+	p := optimization.VectorDensePoint(pd)
 	log.Printf("init solution at %v", pd)
 	test_solver(A, b, p, "lm_bfgs", &optimization.LmBFGSSolver{})
 	test_solver(A, b, p, "gradient", &optimization.GradientDescentSolver{})
