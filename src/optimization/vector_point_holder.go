@@ -16,21 +16,11 @@ type VectorPointHolder struct {
 	Sparse []FeatureValue
 }
 
-func (a VectorPointHolder) Size() int {
-	if a.Dense != nil {
-		return len(a.Dense)
-	}
-	if a.Sparse != nil {
-		return len(a.Sparse)
-	}
-	return 0
-}
-
 func (a VectorPointHolder) Equal(x float64, y float64, bphi PointHolderInterface) bool {
 	b := bphi.(VectorPointHolder)
-	as := a.Size()
-	bs := b.Size()
 	if a.Dense != nil && b.Dense != nil {
+		as := len(a.Dense)
+		bs := len(b.Dense)
 		if as != bs {
 			return false
 		}
@@ -44,6 +34,8 @@ func (a VectorPointHolder) Equal(x float64, y float64, bphi PointHolderInterface
 		return true
 	}
 	if a.Dense != nil {
+		as := len(a.Dense)
+		bs := len(b.Sparse)
 		bi := 0
 		ax := -1
 		for ; bi < bs && ax < as; bi++ {
@@ -82,6 +74,8 @@ func (a VectorPointHolder) Equal(x float64, y float64, bphi PointHolderInterface
 	if b.Dense != nil {
 		return b.Equal(y, x, a)
 	}
+	as := len(a.Sparse)
+	bs := len(b.Sparse)
 	ai, bi := 0, 0
 	for ai < as && bi < bs {
 		ax := a.Sparse[ai].Feature
@@ -115,7 +109,6 @@ func (a VectorPointHolder) Equal(x float64, y float64, bphi PointHolderInterface
 }
 
 func (a VectorPointHolder) String(x float64) string {
-	s := a.Size()
 	if a.Dense != nil {
 		ret := "["
 		for i, v := range a.Dense {
@@ -126,23 +119,20 @@ func (a VectorPointHolder) String(x float64) string {
 		}
 		return ret + "]"
 	}
-	if s == 0 {
-		return "{}"
-	}
-	ret := "{"
-	for i, fv := range a.Sparse {
-		if i > 0 {
-			ret += ", "
+	if a.Sparse != nil {
+		ret := "{"
+		for i, fv := range a.Sparse {
+			if i > 0 {
+				ret += ", "
+			}
+			ret += fmt.Sprintf("%v:%v", fv.Feature, x*fv.Value)
 		}
-		ret += fmt.Sprintf("%v:%v", fv.Feature, x*fv.Value)
+		return ret + "}"
 	}
-	return ret + "}"
+	return "{}"
 }
 
-func (a VectorPointHolder) AbsMax(x float64) float64 {
-	if x == 0 || a.Size() == 0 {
-		return 0
-	}
+func (a VectorPointHolder) AbsMax() float64 {
 	m := 0.0
 	if a.Dense != nil {
 		for _, v := range a.Dense {
@@ -158,13 +148,10 @@ func (a VectorPointHolder) AbsMax(x float64) float64 {
 			}
 		}
 	}
-	return m * abs(x)
+	return m
 }
 
-func (a VectorPointHolder) SquareSum(x float64) float64 {
-	if x == 0 || a.Size() == 0 {
-		return 0
-	}
+func (a VectorPointHolder) SquareSum() float64 {
 	m := 0.0
 	if a.Dense != nil {
 		for _, v := range a.Dense {
@@ -176,7 +163,7 @@ func (a VectorPointHolder) SquareSum(x float64) float64 {
 			m += v * v
 		}
 	}
-	return m * x * x
+	return m
 }
 
 type fsic struct {
@@ -234,7 +221,7 @@ func plusSparse(df *float64, dh *VectorPointHolder, fs []float64, ss [][]Feature
 			log.Fatalf("local point plus with zero factor")
 		}
 	}
-	if dh.Size() == 0 {
+	if dh.Dense == nil && dh.Sparse == nil {
 		*df = 0.0
 	}
 	c := 0
@@ -248,7 +235,7 @@ func plusSparse(df *float64, dh *VectorPointHolder, fs []float64, ss [][]Feature
 	}
 	if dh.Dense != nil {
 		// TODO: I have to copy the whole dense array ...
-		d := make([]float64, dh.Size())
+		d := make([]float64, len(dh.Dense))
 		for x, v := range dh.Dense {
 			d[x] = v * *df
 		}
@@ -347,10 +334,10 @@ func plusDense(df *float64, dh *VectorPointHolder, fs []float64, ds [][]float64)
 			log.Fatalf("plus with zero factor")
 		}
 	}
-	if dh.Dense != nil && len(ds[0]) != dh.Size() {
-		log.Fatalf("Size(%v and %v) uncompatible to sum", len(ds[0]), dh.Size())
+	if dh.Dense != nil && len(ds[0]) != len(dh.Dense) {
+		log.Fatalf("Size(%v and %v) uncompatible to sum", len(ds[0]), len(dh.Dense))
 	}
-	if dh.Size() == 0 {
+	if dh.Dense == nil && dh.Sparse == nil {
 		*df = 0.0
 	}
 	is_alloc := false
@@ -419,7 +406,7 @@ func (h VectorPointHolder) LinearPlus(f float64, fs []float64, hs []PointHolderI
 	n = remove_if(fs, hs, n,
 		func(cf float64, cphi PointHolderInterface) bool {
 			ch := cphi.(VectorPointHolder)
-			if cf == 0 || ch.Size() == 0 {
+			if cf == 0 || (ch.Dense == nil && ch.Sparse == nil) {
 				return true
 			}
 			if ch.Dense != nil && h.Dense != nil && &ch.Dense[0] == &h.Dense[0] {
@@ -435,7 +422,7 @@ func (h VectorPointHolder) LinearPlus(f float64, fs []float64, hs []PointHolderI
 	if n == 0 {
 		return f, h
 	}
-	if h.Size() == 0 {
+	if h.Dense == nil && h.Sparse == nil {
 		f = 0.0
 	}
 	nd := remove_if(fs, hs, n, func(f float64, h PointHolderInterface) bool { return h.(VectorPointHolder).Dense == nil })
@@ -456,20 +443,17 @@ func (h VectorPointHolder) LinearPlus(f float64, fs []float64, hs []PointHolderI
 	return f, h
 }
 
-func (a VectorPointHolder) InnerProd(x, y float64, bphi PointHolderInterface) float64 {
+func (a VectorPointHolder) InnerProd(bphi PointHolderInterface) float64 {
 	b := bphi.(VectorPointHolder)
-	if x == 0 || y == 0 || a.Size() == 0 || b.Size() == 0 {
-		return 0.0
-	}
 	s := 0.0
 	if a.Dense != nil && b.Dense != nil {
-		if a.Size() != b.Size() {
+		if len(a.Dense) != len(b.Dense) {
 			log.Fatalf("incompatible size")
 		}
 		for i, av := range a.Dense {
 			s += av * b.Dense[i]
 		}
-		return s * x * y
+		return s
 	}
 	if a.Dense != nil {
 		for _, bfv := range b.Sparse {
@@ -479,13 +463,13 @@ func (a VectorPointHolder) InnerProd(x, y float64, bphi PointHolderInterface) fl
 				s += a.Dense[x] * bv
 			}
 		}
-		return s * x * y
+		return s
 	}
 	if b.Dense != nil {
-		return b.InnerProd(y, x, a)
+		return b.InnerProd(a)
 	}
 	ai, bi := 0, 0
-	as, bs := a.Size(), b.Size()
+	as, bs := len(a.Sparse), len(b.Sparse)
 	for ai < as && bi < bs {
 		ax := a.Sparse[ai].Feature
 		bx := b.Sparse[bi].Feature
@@ -494,14 +478,14 @@ func (a VectorPointHolder) InnerProd(x, y float64, bphi PointHolderInterface) fl
 		} else if bx < ax {
 			bi++
 		} else {
-			av := x * a.Sparse[ai].Value
-			bv := y * b.Sparse[bi].Value
+			av := a.Sparse[ai].Value
+			bv := b.Sparse[bi].Value
 			ai++
 			bi++
 			s += av * bv
 		}
 	}
-	return s * x * y
+	return s
 }
 
 func VectorDensePoint(a []float64) Point {
@@ -513,7 +497,7 @@ func VectorDensePoint(a []float64) Point {
 }
 
 func VectorToDense(a Point) []float64 {
-	d := make([]float64, a.Size())
+	d := make([]float64, len(a.Holder.(VectorPointHolder).Dense))
 	h := a.Holder.(VectorPointHolder)
 	if h.Dense != nil {
 		for x, v := range h.Dense {

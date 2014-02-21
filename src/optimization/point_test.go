@@ -44,8 +44,8 @@ func make_sparse(vi []int, vf []float64) Point {
 
 func TestSparse(t *testing.T) {
 	v := make_sparse(vi(1, 3), vf(1.0, 9.0))
-	if v.Size() != 2 {
-		t.Error("Sparse size")
+	if v.SquareSum() != 1.0+81.0 {
+		t.Error("Sparse")
 	}
 }
 

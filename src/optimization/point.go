@@ -1,22 +1,17 @@
 package optimization
 
 type PointHolderInterface interface {
-	Size() int
 	Equal(float64, float64, PointHolderInterface) bool
 	String(float64) string
-	AbsMax(float64) float64
-	SquareSum(float64) float64
-	InnerProd(float64, float64, PointHolderInterface) float64
+	AbsMax() float64
+	SquareSum() float64
+	InnerProd(PointHolderInterface) float64
 	LinearPlus(float64, []float64, []PointHolderInterface) (float64, PointHolderInterface)
 }
 
 type Point struct {
 	Factor float64
 	Holder PointHolderInterface
-}
-
-func (a Point) Size() int {
-	return a.Holder.Size()
 }
 
 func (a Point) Equal(b Point) bool {
@@ -33,14 +28,14 @@ func (a Point) Scale(x float64) Point {
 
 func (a Point) AbsMax() float64 {
 	if a.Factor != 0.0 {
-		return a.Holder.AbsMax(a.Factor)
+		return a.Holder.AbsMax() * abs(a.Factor)
 	}
 	return 0.0
 }
 
 func (a Point) SquareSum() float64 {
 	if a.Factor != 0.0 {
-		return a.Holder.SquareSum(a.Factor)
+		return a.Holder.SquareSum() * a.Factor * a.Factor
 	}
 	return 0.0
 }
@@ -59,7 +54,7 @@ func Sum(vs ...Point) (ret Point) {
 		}
 		return f
 	}
-	n := remove_if(vs, len(vs), func(a Point) bool { return a.Factor == 0 || a.Size() == 0 })
+	n := remove_if(vs, len(vs), func(a Point) bool { return a.Factor == 0 })
 	if n > 0 {
 		fs := make([]float64, n-1)
 		hs := make([]PointHolderInterface, n-1)
@@ -78,8 +73,8 @@ func (a *Point) PlusAssign(vs ...Point) {
 }
 
 func (a *Point) InnerProd(b Point) float64 {
-	if a.Factor == 0.0 || b.Factor == 0.0 || a.Size() == 0 || b.Size() == 0 {
+	if a.Factor == 0.0 || b.Factor == 0.0 {
 		return 0
 	}
-	return a.Holder.InnerProd(a.Factor, b.Factor, b.Holder)
+	return a.Holder.InnerProd(b.Holder) * a.Factor * b.Factor
 }
