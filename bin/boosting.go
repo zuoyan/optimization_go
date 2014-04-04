@@ -10,6 +10,8 @@ import (
 	"optimization"
 	"os"
 	"strings"
+
+	lbfgsb "github.com/afbarnard/go-lbfgsb"
 )
 
 var (
@@ -27,6 +29,7 @@ var (
 	max_iter              = flag.Int("max_iter", 30, "max iteration of optimization")
 	regular2              = flag.Float64("regular2", 1.e-4, "square regular")
 	lost                  = flag.String("lost", "exp", "lost function, exp, logistic")
+	solver_name           = flag.String("solver_name", "bfgs", "solver name")
 )
 
 func string_to_fs(s string) []float64 {
@@ -238,15 +241,60 @@ func opt_func_grad(p optimization.Point, all_labels [][]float64) (float64, optim
 	return f, optimization.VectorDensePoint(grads)
 }
 
+type LbfgsbSolver struct {
+	optimization.SolverBase
+}
+
+func (solver *LbfgsbSolver) Solve(problem *optimization.Problem, x optimization.Point) (optimization.Point, float64) {
+	optimizer := new(lbfgsb.Lbfgsb).SetFTolerance(1e-10).SetGTolerance(1e-10)
+	point := optimization.VectorToDense(x)
+	optimizer.SetLogger(func(info *lbfgsb.OptimizationIterationInformation) {
+		if (info.Iteration-1)%10 == 0 {
+			solver.Log(1000, info.Header())
+		}
+		solver.Log(1000, info.String())
+	})
+	objective := lbfgsb.GeneralObjectiveFunction{
+		Function: func(p []float64) float64 {
+			y := problem.Value(optimization.VectorDensePoint(p))
+			return y
+		},
+		Gradient: func(p []float64) []float64 {
+			g := problem.Gradient(optimization.VectorDensePoint(p))
+			return optimization.VectorToDense(g)
+		},
+	}
+	xfg, status := optimizer.Minimize(objective, point)
+	stats := optimizer.OptimizationStatistics()
+	log.Printf("stats: iters: %v; F evals: %v; G evals: %v", stats.Iterations, stats.FunctionEvaluations, stats.GradientEvaluations)
+	log.Printf("status: %v", status)
+	x = optimization.VectorDensePoint(xfg.X)
+	if xfg.F != problem.Value(x) {
+		log.Printf("error of value, %v != %v", xfg.F, problem.Value(x))
+	}
+	return x, xfg.F
+}
+
 func OptimizeWeights(init_weights []float64, all_labels [][]float64) []float64 {
 	log.Printf("optimize ...\n")
-	solver := optimization.LmBFGSSolver{}
+	var solver optimization.Solver
+	if *solver_name == "lbfgsb" {
+		solver = &LbfgsbSolver{}
+	}
+	if *solver_name == "gradient" {
+		solver = &optimization.GradientDescentSolver{}
+	}
+	if *solver_name == "conjugate" {
+		solver = &optimization.GradientDescentSolver{}
+	}
+	if solver == nil {
+		solver = &optimization.LmBFGSSolver{}
+	}
 	solver.Init(map[string]interface{}{
 		"MaxIter": *max_iter,
 		"LogFunc": func(level int, message string) {
 			log.Printf("solver[level=%v]:%v", level, message)
 		},
-		"MaxLogLevel": 100000,
 	})
 	problem := &optimization.Problem{
 		ValueAndGradientFunc: func(p optimization.Point) (float64, optimization.Point) { return opt_func_grad(p, all_labels) },
